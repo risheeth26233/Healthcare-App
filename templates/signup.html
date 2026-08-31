@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Create Account - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-container">
+        <div class="auth-header">
+            <div class="auth-logo">
+                <span class="logo-icon">⚕</span>
+                <span class="logo-text">HealthCare</span>
+            </div>
+            <h1>Create Your Account</h1>
+            <p class="auth-subtitle">Join HealthCare to manage your health assessments and appointments</p>
+        </div>
+
+        <form method="POST" class="auth-form" novalidate>
+            <div class="form-group">
+                <label for="full_name">Full Name <span class="required">*</span></label>
+                <input type="text" id="full_name" name="full_name" required 
+                       value="{{ form_data.full_name or '' }}" 
+                       placeholder="John Doe"
+                       autocomplete="name">
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" id="email" name="email" required 
+                       value="{{ form_data.email or '' }}" 
+                       placeholder="john@example.com"
+                       autocomplete="email">
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password <span class="required">*</span></label>
+                <input type="password" id="password" name="password" required 
+                       placeholder="Create a strong password"
+                       autocomplete="new-password"
+                       minlength="8">
+                <div class="password-requirements" id="password-requirements">
+                    <span class="req-item" data-req="length">At least 8 characters</span>
+                    <span class="req-item" data-req="uppercase">One uppercase letter</span>
+                    <span class="req-item" data-req="lowercase">One lowercase letter</span>
+                    <span class="req-item" data-req="number">One number</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm_password">Confirm Password <span class="required">*</span></label>
+                <input type="password" id="confirm_password" name="confirm_password" required 
+                       placeholder="Confirm your password"
+                       autocomplete="new-password">
+                <span class="password-match" id="password-match"></span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-large btn-block">Create Account</button>
+        </form>
+
+        <div class="auth-footer">
+            <p>Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const password = document.getElementById('password');
+    const confirmPassword = document.getElementById('confirm_password');
+    const requirements = {
+        length: /.{8,}/,
+        uppercase: /[A-Z]/,
+        lowercase: /[a-z]/,
+        number: /[0-9]/
+    };
+    
+    function checkRequirements() {
+        const value = password.value;
+        Object.keys(requirements).forEach(req => {
+            const element = document.querySelector(`[data-req="${req}"]`);
+            if (requirements[req].test(value)) {
+                element.classList.add('met');
+            } else {
+                element.classList.remove('met');
+            }
+        });
+    }
+    
+    function checkMatch() {
+        const matchElement = document.getElementById('password-match');
+        if (confirmPassword.value && password.value !== confirmPassword.value) {
+            matchElement.textContent = 'Passwords do not match';
+            matchElement.className = 'password-match error';
+            confirmPassword.setCustomValidity('Passwords do not match');
+        } else if (confirmPassword.value && password.value === confirmPassword.value) {
+            matchElement.textContent = 'Passwords match';
+            matchElement.className = 'password-match success';
+            confirmPassword.setCustomValidity('');
+        } else {
+            matchElement.textContent = '';
+            matchElement.className = 'password-match';
+            confirmPassword.setCustomValidity('');
+        }
+    }
+    
+    password.addEventListener('input', function() {
+        checkRequirements();
+        checkMatch();
+    });
+    
+    confirmPassword.addEventListener('input', checkMatch);
+    
+    // Initial check
+    checkRequirements();
+});
+</script>
+{% endblock %}

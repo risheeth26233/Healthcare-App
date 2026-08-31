@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Health Assessment - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Health Assessment</h1>
+    <p>Enter your health information to receive a personalized assessment</p>
+</div>
+
+<form method="POST" class="assessment-form">
+    <div class="form-section">
+        <h2>Personal Information</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="name">Full Name <span class="required">*</span></label>
+                <input type="text" id="name" name="name" required value="{{ form_data.name or '' }}" placeholder="John Doe">
+            </div>
+            <div class="form-group">
+                <label for="age">Age <span class="required">*</span></label>
+                <input type="number" id="age" name="age" required min="1" max="120" value="{{ form_data.age or '' }}" placeholder="30" class="no-wheel">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="gender">Gender <span class="required">*</span></label>
+                <select id="gender" name="gender" required>
+                    <option value="">Select</option>
+                    <option value="male" {% if form_data.gender == 'male' %}selected{% endif %}>Male</option>
+                    <option value="female" {% if form_data.gender == 'female' %}selected{% endif %}>Female</option>
+                    <option value="other" {% if form_data.gender == 'other' %}selected{% endif %}>Other</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <h2>Body Measurements</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="height">Height (cm) <span class="required">*</span></label>
+                <input type="number" id="height" name="height" required min="1" max="250" step="0.1" value="{{ form_data.height or '' }}" placeholder="170" class="no-wheel">
+            </div>
+            <div class="form-group">
+                <label for="weight">Weight (kg) <span class="required">*</span></label>
+                <input type="number" id="weight" name="weight" required min="1" max="300" step="0.1" value="{{ form_data.weight or '' }}" placeholder="70" class="no-wheel">
+            </div>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <h2>Vital Signs</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="systolic_bp">Systolic Blood Pressure (mmHg) <span class="required">*</span></label>
+                <input type="number" id="systolic_bp" name="systolic_bp" required min="1" max="300" value="{{ form_data.systolic_bp or '' }}" placeholder="120" class="no-wheel">
+            </div>
+            <div class="form-group">
+                <label for="diastolic_bp">Diastolic Blood Pressure (mmHg) <span class="required">*</span></label>
+                <input type="number" id="diastolic_bp" name="diastolic_bp" required min="1" max="200" value="{{ form_data.diastolic_bp or '' }}" placeholder="80" class="no-wheel">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="blood_sugar">Blood Sugar (mg/dL) <span class="required">*</span></label>
+                <input type="number" id="blood_sugar" name="blood_sugar" required min="1" max="500" value="{{ form_data.blood_sugar or '' }}" placeholder="90" class="no-wheel">
+                <small class="form-hint">Fasting value preferred</small>
+            </div>
+            <div class="form-group">
+                <label for="heart_rate">Heart Rate (bpm) <span class="required">*</span></label>
+                <input type="number" id="heart_rate" name="heart_rate" required min="1" max="300" value="{{ form_data.heart_rate or '' }}" placeholder="72" class="no-wheel">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="temperature">Body Temperature (°F) <span class="required">*</span></label>
+                <input type="number" id="temperature" name="temperature" required min="90" max="110" step="0.1" value="{{ form_data.temperature or '' }}" placeholder="98.6" class="no-wheel">
+            </div>
+        </div>
+    </div>
+
+    <div class="form-section">
+        <h2>Symptoms (Select all that apply)</h2>
+        <div class="symptoms-grid">
+            {% set symptoms_list = [
+                ('chest_pain', 'Chest Pain'),
+                ('shortness_breath', 'Shortness of Breath'),
+                ('dizziness', 'Dizziness'),
+                ('fatigue', 'Fatigue'),
+                ('headache', 'Headache'),
+                ('nausea', 'Nausea'),
+                ('fever', 'Fever'),
+                ('cough', 'Persistent Cough'),
+                ('joint_pain', 'Joint Pain'),
+                ('abdominal_pain', 'Abdominal Pain'),
+                ('palpitations', 'Heart Palpitations'),
+                ('swelling', 'Swelling (Edema)')
+            ] %}
+            {% for value, label in symptoms_list %}
+                <label class="symptom-checkbox">
+                    <input type="checkbox" name="symptoms" value="{{ value }}" 
+                           {% if value in (form_data.symptoms or []) %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                </label>
+            {% endfor %}
+        </div>
+        <p class="form-hint">Select any symptoms you are currently experiencing. Leave blank if none.</p>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-large">Calculate Health Assessment</button>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-large">Cancel</a>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Prevent mouse wheel from changing number input values
+    document.querySelectorAll('input[type="number"].no-wheel').forEach(function(input) {
+        input.addEventListener('wheel', function(e) {
+            // Only prevent if the input is focused (user is interacting with it)
+            if (document.activeElement === this) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+    });
+});
+</script>
+{% endblock %}

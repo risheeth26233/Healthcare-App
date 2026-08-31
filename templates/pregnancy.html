@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Pregnancy & Maternity - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="pregnancy-page">
+    <!-- Hero Section -->
+    <section class="pregnancy-hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1>Pregnancy & Maternity Wellness</h1>
+                <p class="hero-message">
+                    "You're doing great. Take a breath — you're taking an important step toward caring for yourself and your baby."
+                </p>
+                {% if user_name %}
+                <p class="welcome-message">
+                    Welcome, {{ user_name }}. You're not alone on this journey.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Disclaimer -->
+    <section class="pregnancy-disclaimer">
+        <div class="container">
+            <div class="disclaimer-card">
+                <span class="disclaimer-icon">⚠</span>
+                <div>
+                    <h3>Important Disclaimer</h3>
+                    <p>This section provides general educational and wellness information and does not replace care from a qualified healthcare professional. Always consult with your obstetrician, midwife, or healthcare provider for personalized medical advice, prenatal care, and any concerns about your pregnancy.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Positive Affirmation Card -->
+    <section class="pregnancy-affirmation">
+        <div class="container">
+            <div class="affirmation-card">
+                <div class="affirmation-icon">💚</div>
+                <h2>Take a Deep Breath</h2>
+                <p class="affirmation-text">
+                    "You're doing your best, and that's enough for today."
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Content Sections -->
+    <section class="pregnancy-content">
+        <div class="container">
+            <div class="content-grid">
+                <!-- Prenatal Wellness -->
+                <article class="content-card">
+                    <div class="card-icon">🌿</div>
+                    <h2>Prenatal Wellness</h2>
+                    <ul class="wellness-list">
+                        <li><strong>Nutrition:</strong> Focus on folate-rich foods, iron, calcium, and protein. Prenatal vitamins as recommended by your provider.</li>
+                        <li><strong>Hydration:</strong> Aim for 8-10 glasses of water daily. Proper hydration supports amniotic fluid and blood volume.</li>
+                        <li><strong>Movement:</strong> Gentle activities like walking, prenatal yoga, and swimming can improve circulation and mood.</li>
+                        <li><strong>Rest:</strong> Listen to your body. 7-9 hours of sleep plus naps when needed supports healthy development.</li>
+                    </ul>
+                </article>
+
+                <!-- Your Wellbeing Matters -->
+                <article class="content-card">
+                    <div class="card-icon">💝</div>
+                    <h2>Your Wellbeing Matters</h2>
+                    <ul class="wellness-list">
+                        <li><strong>Mental Health:</strong> Pregnancy brings many emotions. Talk to your provider about anxiety, mood changes, or depression.</li>
+                        <li><strong>Stress Management:</strong> Breathing exercises, meditation, and connecting with support systems can help.</li>
+                        <li><strong>Body Changes:</strong> Every pregnancy is unique. Trust your body's wisdom and communicate concerns with your care team.</li>
+                        <li><strong>Partner/Support:</strong> Involve your partner or support person in appointments and preparation.</li>
+                    </ul>
+                </article>
+
+                <!-- Preparing for Your Appointment -->
+                <article class="content-card">
+                    <div class="card-icon">📋</div>
+                    <h2>Preparing for Your Appointment</h2>
+                    <ul class="wellness-list">
+                        <li>Write down questions between visits so you don't forget.</li>
+                        <li>Track symptoms: nausea, swelling, fetal movements, contractions.</li>
+                        <li>Bring a list of medications, supplements, and any test results.</li>
+                        <li>Note your last menstrual period and any previous pregnancy history.</li>
+                        <li>Consider bringing a support person for advocacy and note-taking.</li>
+                    </ul>
+                </article>
+
+                <!-- Questions to Ask -->
+                <article class="content-card">
+                    <div class="card-icon">❓</div>
+                    <h2>Questions You May Want to Ask Your Doctor</h2>
+                    <ul class="wellness-list">
+                        <li>What prenatal tests or screenings are recommended for me?</li>
+                        <li>What are the warning signs I should call about immediately?</li>
+                        <li>What is your policy on inductions, C-sections, and birth preferences?</li>
+                        <li>What pain management options are available during labor?</li>
+                        <li>Who covers for you when you're not available?</li>
+                        <li>What postpartum support and follow-up do you provide?</li>
+                    </ul>
+                </article>
+
+                <!-- Breathing Exercise -->
+                <article class="content-card breathing-card">
+                    <div class="card-icon">🌬️</div>
+                    <h2>Take a Moment to Breathe</h2>
+                    <div class="breathing-exercise">
+                        <p class="breathing-instruction">Try this simple grounding technique:</p>
+                        <div class="breathing-steps">
+                            <div class="step">
+                                <span class="step-number">1</span>
+                                <span>Inhale slowly through your nose for 4 counts</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">2</span>
+                                <span>Hold gently for 4 counts</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">3</span>
+                                <span>Exhale slowly through your mouth for 6 counts</span>
+                            </div>
+                            <div class="step">
+                                <span class="step-number">4</span>
+                                <span>Repeat 4-6 times</span>
+                            </div>
+                        </div>
+                        <button class="breathing-btn" onclick="startBreathing()">Start Guided Breathing</button>
+                    </div>
+                </article>
+
+                <!-- Emergency Warning -->
+                <article class="content-card emergency-card">
+                    <div class="card-icon">🚨</div>
+                    <h2>When to Seek Immediate Care</h2>
+                    <p>Contact emergency services or go to the nearest ER if you experience:</p>
+                    <ul class="emergency-list">
+                        <li>Heavy vaginal bleeding</li>
+                        <li>Severe abdominal pain or cramping</li>
+                        <li>Sudden, severe swelling in face, hands, or feet</li>
+                        <li>Severe headache that won't go away</li>
+                        <li>Vision changes (blurring, flashing lights)</li>
+                        <li>Fever over 100.4°F (38°C)</li>
+                        <li>Decreased or no fetal movement</li>
+                        <li>Signs of preterm labor before 37 weeks</li>
+                    </ul>
+                    <p class="emergency-note"><strong>When in doubt, always call your provider or seek emergency care. It's better to be checked and reassured than to wait.</strong></p>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA to Assessment/Dashboard -->
+    <section class="pregnancy-cta">
+        <div class="container">
+            <div class="cta-card">
+                <h2>Ready for Your Health Assessment?</h2>
+                <p>Track your wellness with a quick health screening. Results are personalized and private.</p>
+                {% if user_name %}
+                <a href="{{ url_for('assessment') }}" class="btn btn-primary btn-large">Start Assessment</a>
+                {% else %}
+                <a href="{{ url_for('login', next=url_for('assessment')) }}" class="btn btn-primary btn-large">Sign In to Assess</a>
+                <a href="{{ url_for('signup') }}" class="btn btn-secondary btn-large">Create Account</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+function startBreathing() {
+    const btn = document.querySelector('.breathing-btn');
+    const steps = document.querySelectorAll('.breathing-steps .step');
+    
+    btn.disabled = true;
+    btn.textContent = 'Breathing...';
+    
+    let current = 0;
+    
+    function nextStep() {
+        if (current > 0) {
+            steps[current - 1].classList.remove('active');
+        }
+        if (current < steps.length) {
+            steps[current].classList.add('active');
+            current++;
+            setTimeout(nextStep, 4000); // 4 seconds per step
+        } else {
+            steps.forEach(s => s.classList.remove('active'));
+            btn.disabled = false;
+            btn.textContent = 'Start Guided Breathing';
+        }
+    }
+    
+    nextStep();
+}
+</script>
+{% endblock %}

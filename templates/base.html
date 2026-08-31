@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Healthcare App{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <span class="logo-icon">⚕</span>
+                <span class="logo-text">HealthCare</span>
+            </div>
+            <nav class="nav">
+                <a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint == 'index' %}active{% endif %}">Home</a>
+                <a href="{{ url_for('assessment') }}" class="nav-link {% if request.endpoint == 'assessment' %}active{% endif %}">Health Assessment</a>
+                <a href="{{ url_for('doctors') }}" class="nav-link {% if request.endpoint == 'doctors' %}active{% endif %}">Find a Doctor</a>
+                <a href="{{ url_for('pregnancy') }}" class="nav-link {% if request.endpoint == 'pregnancy' %}active{% endif %}">Pregnancy & Maternity</a>
+                
+                {% if session.user_id %}
+                    <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+                    <a href="{{ url_for('profile') }}" class="nav-link">Profile</a>
+                    <span class="nav-user">Welcome, {{ session.user_name }}</span>
+                    <a href="{{ url_for('logout') }}" class="nav-link btn-logout">Logout</a>
+                {% else %}
+                    <a href="{{ url_for('login') }}" class="nav-link">Login</a>
+                    <a href="{{ url_for('signup') }}" class="nav-link btn-signup">Create Account</a>
+                {% endif %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-messages">
+                        {% for category, message in messages %}
+                            <div class="flash flash-{{ category }}">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 HealthCare App - Student Project</p>
+            <p class="disclaimer">This application is for educational purposes only and does not provide medical advice.</p>
+        </div>
+    </footer>
+</body>
+</html>

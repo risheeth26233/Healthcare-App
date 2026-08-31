@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Assessment Results - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Health Assessment Results</h1>
+    <p>Results for {{ results.patient_name }}, Age {{ results.age }}</p>
+</div>
+
+{# Use flag_count calculated in Flask route #}
+{% set flag_count = results.flag_count %}
+
+{# Prominent alert for multiple screening flags #}
+{% if flag_count > 1 %}
+<div class="screening-alert alert-multiple">
+    <div class="alert-icon">⚠</div>
+    <div class="alert-content">
+        <h2>Multiple Screening Flags Detected</h2>
+        <p>{{ flag_count }} value{{ 's' if flag_count != 1 else '' }} outside typical reference range{{ 's' if flag_count != 1 else '' }}. Review each screening flag below and consider discussing with a healthcare professional.</p>
+    </div>
+</div>
+{% elif flag_count == 1 %}
+<div class="screening-alert alert-single">
+    <div class="alert-icon">⚠</div>
+    <div class="alert-content">
+        <h2>One Screening Flag Detected</h2>
+        <p>One value is outside the typical reference range. Review the screening flag below and consider monitoring or discussing with a healthcare professional.</p>
+    </div>
+</div>
+{% else %}
+<div class="screening-alert alert-none">
+    <div class="alert-icon">✓</div>
+    <div class="alert-content">
+        <h2>All Values Within Reference Ranges</h2>
+        <p>All vital signs, BMI, and reported symptoms are within typical reference ranges for adults.</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="results-grid">
+    {# BMI Card - reduced visual dominance #}
+    <div class="result-card bmi-card">
+        <h2>BMI Screening</h2>
+        <div class="bmi-value">{{ results.bmi }}</div>
+        <div class="bmi-category bmi-{{ results.bmi_category.lower().replace(' ', '-') }}">
+            {{ results.bmi_category }}
+        </div>
+        <p class="bmi-description">{{ results.bmi_description }}</p>
+    </div>
+
+    {# Vital Signs Analysis - with color-coded cards #}
+    <div class="result-card">
+        <h2>Vital Signs Screening</h2>
+        <div class="vital-signs-list">
+            {% for key, vital in results.vital_signs.items() %}
+            {% set is_normal = 'Within Reference Range' in vital.status %}
+            {% set status_class = vital.status.lower().replace(' ', '-').replace('(', '').replace(')', '') %}
+            <div class="vital-item vital-{{ 'normal' if is_normal else 'flagged' }}">
+                <div class="vital-header">
+                    <span class="vital-name">{{ key.replace('_', ' ').title() }}</span>
+                    <span class="vital-value">{{ vital.value }}</span>
+                </div>
+                <div class="vital-status status-{{ status_class }}">
+                    {{ vital.status }}
+                </div>
+                <p class="vital-message">{{ vital.message }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+{# Overall Health Summary Section #}
+<div class="result-card overall-summary">
+    <h2>Overall Health Summary</h2>
+    
+    <div class="summary-stats">
+        <div class="stat-item stat-flags">
+            <span class="stat-value">{{ flag_count }}</span>
+            <span class="stat-label">Screening Flag{{ 's' if flag_count != 1 else '' }}</span>
+        </div>
+        <div class="stat-item stat-vitals">
+            <span class="stat-value">{{ results.vital_signs|length }}</span>
+            <span class="stat-label">Vitals Assessed</span>
+        </div>
+        <div class="stat-item stat-bmi">
+            <span class="stat-value">{{ results.bmi }}</span>
+            <span class="stat-label">BMI</span>
+        </div>
+    </div>
+
+    <div class="summary-narrative">
+        <p>{{ results.assessment.summary }}</p>
+    </div>
+
+    <h3>Screening Guidance</h3>
+    <ul class="guidance-list">
+        {% for item in results.assessment.guidance %}
+        <li>{{ item }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+{% if results.symptoms %}
+<div class="result-card symptoms-reported">
+    <h2>Reported Symptoms</h2>
+    <ul class="symptoms-list">
+        {% for symptom in results.symptoms %}
+        <li>{{ symptom.replace('_', ' ').title() }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+{# Enhanced non-diagnostic disclaimer #}
+<div class="disclaimer-box prominent">
+    <h4>⚠ Important: Not a Medical Diagnosis</h4>
+    <p><strong>This health screening is for informational and educational purposes only.</strong> It does not provide medical advice, diagnosis, or treatment. The screening flags above are based on general reference ranges and algorithms, not a professional medical evaluation. Individual health conditions vary significantly. Always consult with a qualified healthcare provider for proper medical evaluation, diagnosis, and treatment. In case of medical emergency, contact emergency services immediately.</p>
+</div>
+
+<div class="form-actions">
+    <a href="{{ url_for('doctors') }}" class="btn btn-primary btn-large">Find a Doctor</a>
+    <a href="{{ url_for('assessment') }}" class="btn btn-secondary btn-large">New Assessment</a>
+    <a href="{{ url_for('index') }}" class="btn btn-outline btn-large">Back to Home</a>
+</div>
+{% endblock %}

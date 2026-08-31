@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="profile-page">
+    <div class="profile-container">
+        <div class="profile-header">
+            <div class="profile-avatar">
+                {{ user.full_name.split()[0][0] }}
+            </div>
+            <h1>{{ user.full_name }}</h1>
+            <p class="profile-email">{{ user.email }}</p>
+        </div>
+
+        <div class="profile-stats">
+            <div class="stat-card">
+                <span class="stat-number">{{ user.appointments_count or 0 }}</span>
+                <span class="stat-label">Appointments</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-number">{{ user.assessments_count or 0 }}</span>
+                <span class="stat-label">Assessments</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-member">Since {{ user.created_at[:10] if user.created_at else '2024' }}</span>
+                <span class="stat-label">Member</span>
+            </div>
+        </div>
+
+        <div class="profile-actions">
+            <a href="{{ url_for('assessment') }}" class="btn btn-primary">New Health Assessment</a>
+            <a href="{{ url_for('doctors') }}" class="btn btn-secondary">Find a Doctor</a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-outline">My Appointments</a>
+        </div>
+
+        <div class="profile-settings">
+            <h2>Account Settings</h2>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <h3>Email Address</h3>
+                    <p>{{ user.email }}</p>
+                </div>
+                <button class="btn btn-sm btn-outline" disabled>Change Email</button>
+            </div>
+            <div class="setting-item">
+                <div class="setting-info">
+                    <h3>Password</h3>
+                    <p>Last changed: Recently</p>
+                </div>
+                <button class="btn btn-sm btn-outline" disabled>Change Password</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+healthcare.db
+.env
+.venv/
+venv/

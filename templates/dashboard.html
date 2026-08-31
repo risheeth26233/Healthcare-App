@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="dashboard-page">
+    <div class="dashboard-header">
+        <h1>Welcome back, {{ user_name }}</h1>
+        <p class="dashboard-subtitle">How are you feeling today?</p>
+    </div>
+
+    <div class="dashboard-grid">
+        <!-- Main action cards -->
+        <div class="dashboard-section">
+            <h2>Quick Actions</h2>
+            <div class="action-cards">
+                <a href="{{ url_for('assessment') }}" class="action-card">
+                    <div class="action-icon">📋</div>
+                    <h3>Health Assessment</h3>
+                    <p>Complete a new health screening</p>
+                </a>
+                <a href="{{ url_for('doctors') }}" class="action-card">
+                    <div class="action-icon">👨‍⚕️</div>
+                    <h3>Find a Doctor</h3>
+                    <p>Browse specialists and book appointments</p>
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="action-card">
+                    <div class="action-icon">📅</div>
+                    <h3>My Appointments</h3>
+                    <p>View and manage your appointments</p>
+                </a>
+                <a href="{{ url_for('pregnancy') }}" class="action-card">
+                    <div class="action-icon">🤰</div>
+                    <h3>Pregnancy & Maternity</h3>
+                    <p>Wellness resources for expecting mothers</p>
+                </a>
+            </div>
+        </div>
+
+        <!-- Upcoming appointment -->
+        {% if upcoming %}
+        <div class="dashboard-section">
+            <h2>Upcoming Appointment</h2>
+            <div class="appointment-card upcoming">
+                <div class="appointment-doctor">
+                    <div class="doctor-avatar-small">{{ upcoming.doctor_name.split()[1][0] }}</div>
+                    <div>
+                        <h3>{{ upcoming.doctor_name }}</h3>
+                        <p>{{ upcoming.specialization }}</p>
+                    </div>
+                </div>
+                <div class="appointment-details">
+                    <div class="detail-item">
+                        <span class="detail-icon">📅</span>
+                        <span>{{ upcoming.appointment_date }}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-icon">🕐</span>
+                        <span>{{ upcoming.appointment_time }}</span>
+                    </div>
+                </div>
+                <a href="{{ url_for('dashboard') }}" class="btn btn-outline btn-sm">View All</a>
+            </div>
+        {% else %}
+        <div class="dashboard-section">
+            <h2>Upcoming Appointment</h2>
+            <div class="empty-state">
+                <p>No upcoming appointments scheduled.</p>
+                <a href="{{ url_for('doctors') }}" class="btn btn-primary btn-sm">Book an Appointment</a>
+            </div>
+        {% endif %}
+        </div>
+
+        <!-- Quick Health Tools -->
+        <div class="dashboard-section">
+            <h2>Quick Health Tools</h2>
+            <div class="tools-grid">
+                <a href="{{ url_for('assessment') }}" class="tool-card">
+                    <span class="tool-icon">⚖️</span>
+                    <h4>BMI Calculator</h4>
+                </a>
+                <a href="{{ url_for('assessment') }}" class="tool-card">
+                    <span class="tool-icon">📋</span>
+                    <h4>Health Assessment</h4>
+                </a>
+                <a href="{{ url_for('doctors') }}" class="tool-card">
+                    <span class="tool-icon">🔍</span>
+                    <h4>Doctor Search</h4>
+                </a>
+                <a href="{{ url_for('dashboard') }}" class="tool-card">
+                    <span class="tool-icon">📅</span>
+                    <h4>Appointments</h4>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- All appointments list -->
+    {% if appointments %}
+    <div class="dashboard-section appointments-list">
+        <h2>All Appointments</h2>
+        <div class="appointments-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Doctor</th>
+                        <th>Specialization</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for appt in appointments %}
+                    <tr>
+                        <td>{{ appt.doctor_name }}</td>
+                        <td>{{ appt.specialization }}</td>
+                        <td>{{ appt.appointment_date }}</td>
+                        <td>{{ appt.appointment_time }}</td>
+                        <td>
+                            {% set appt_date = appt.appointment_date %}
+                            {% if appt_date >= (now|date('%Y-%m-%d')) %}
+                                <span class="status-badge upcoming">Upcoming</span>
+                            {% else %}
+                                <span class="status-badge past">Completed</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endif %}
+    </div>
+</div>
+{% endblock %}

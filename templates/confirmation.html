@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Appointment Confirmed - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Appointment Confirmed</h1>
+    <p>Your appointment has been successfully booked</p>
+</div>
+
+<div class="confirmation-card">
+    <div class="confirmation-icon">✓</div>
+    <h2>Appointment Confirmed!</h2>
+    <p class="confirmation-message">Your appointment has been booked successfully. Please save the details below.</p>
+</div>
+
+<div class="result-card appointment-details">
+    <h2>Appointment Details</h2>
+    <dl class="detail-list">
+        <div class="detail-item">
+            <dt>Doctor</dt>
+            <dd>{{ appointment.doctor.name }}</dd>
+        </div>
+        <div class="detail-item">
+            <dt>Specialization</dt>
+            <dd>{{ appointment.doctor.specialization }}</dd>
+        </div>
+        <div class="detail-item">
+            <dt>Date</dt>
+            <dd>{{ appointment.date }}</dd>
+        </div>
+        <div class="detail-item">
+            <dt>Time</dt>
+            <dd>{{ appointment.time }}</dd>
+        </div>
+        {% if appointment.notes %}
+        <div class="detail-item">
+            <dt>Notes</dt>
+            <dd>{{ appointment.notes }}</dd>
+        </div>
+        {% endif %}
+        <div class="detail-item">
+            <dt>Booked On</dt>
+            <dd>{{ appointment.booked_at }}</dd>
+        </div>
+        <div class="detail-item">
+            <dt>Appointment ID</dt>
+            <dd>#{{ appointment.id }}</dd>
+        </div>
+    </dl>
+</div>
+
+<div class="result-card next-steps">
+    <h2>Next Steps</h2>
+    <ul class="guidance-list">
+        <li>Arrive 10-15 minutes before your scheduled appointment time.</li>
+        <li>Bring a valid ID and any relevant medical records.</li>
+        <li>Bring a list of current medications you are taking.</li>
+        <li>If you need to cancel or reschedule, please contact the clinic at least 24 hours in advance.</li>
+        <li>For medical emergencies, call emergency services immediately.</li>
+    </ul>
+</div>
+
+<div class="disclaimer-box">
+    <h4>⚠ Reminder</h4>
+    <p>This appointment booking system is part of a student project. In a real healthcare setting, appointments would be managed through a secure, HIPAA-compliant system with proper patient verification.</p>
+</div>
+
+<div class="form-actions">
+    <a href="{{ url_for('doctors') }}" class="btn btn-primary btn-large">Book Another Appointment</a>
+    <a href="{{ url_for('index') }}" class="btn btn-secondary btn-large">Back to Home</a>
+</div>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Home - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="home-page">
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="hero-content">
+                <h1>Your Health.<br>One Simple Place.</h1>
+                <p class="hero-subtitle">
+                    Assess your health, understand your screening results,<br>
+                    find a doctor and manage your appointments.
+                </p>
+                <div class="hero-buttons">
+                    <a href="{{ url_for('assessment') }}" class="btn btn-primary btn-large">Start Health Assessment</a>
+                    <a href="{{ url_for('doctors') }}" class="btn btn-outline btn-large">Find a Doctor</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&q=80" 
+                     alt="Healthcare professional consulting with patient" 
+                     loading="lazy">
+            </div>
+        </div>
+    </section>
+
+    <!-- Why Choose HealthCare -->
+    <section class="features-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Why use HealthCare?</h2>
+                <p>Simple, clear, and personalized healthcare tools for everyone</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Simple Health Screening</h3>
+                    <p>Complete a comprehensive health assessment in minutes with our guided questionnaire.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Clear Results</h3>
+                    <p>Get easy-to-understand screening results with color-coded flags and personalized guidance.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Find Doctors</h3>
+                    <p>Browse qualified specialists, check availability, and book appointments online.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📅</div>
+                    <h3>Manage Appointments</h3>
+                    <p>View upcoming visits, reschedule, and keep track of your healthcare journey.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">👤</div>
+                    <h3>Personalized Experience</h3>
+                    <p>Create an account to save your history, track progress, and access your dashboard.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🤰</div>
+                    <h3>Maternity Support</h3>
+                    <p>Dedicated wellness resources and guidance for expecting mothers.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Healthcare for Everyone -->
+    <section class="everyone-section">
+        <div class="container">
+            <div class="section-header">
+                <h2>Healthcare for Everyone</h2>
+                <p>We believe quality healthcare tools should be accessible to all</p>
+            </div>
+            <div class="everyone-grid">
+                <div class="everyone-card">
+                    <div class="everyone-icon">🏥</div>
+                    <h3>Preventive Care</h3>
+                    <p>Regular screenings and assessments help catch potential issues early. Our tools make it easy to stay on top of your health.</p>
+                </div>
+                <div class="everyone-card">
+                    <div class="everyone-icon">👨‍👩‍👧‍👦</div>
+                    <h3>Family Healthcare</h3>
+                    <p>Manage health for the whole family. Track appointments, assessments, and find family doctors all in one place.</p>
+                </div>
+                <div class="everyone-card">
+                    <div class="everyone-icon">🤰</div>
+                    <h3>Maternity Support</h3>
+                    <p>Dedicated resources for expecting mothers. Wellness guidance, appointment prep, and breathing exercises.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="cta-card">
+                <h2>Ready to Take Charge of Your Health?</h2>
+                <p>Start your health assessment today and get personalized screening results in minutes.</p>
+                <a href="{{ url_for('assessment') }}" class="btn btn-primary btn-large">Start Health Assessment</a>
+                {% if not session.user_id %}
+                <a href="{{ url_for('signup') }}" class="btn btn-secondary btn-large">Create Free Account</a>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
