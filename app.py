@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 import health_calculations
 from data.doctors import get_all_doctors, get_doctor_by_id
 import database
-from flask_mail import Mail, Message
 
 # Load environment variables
 load_dotenv()
@@ -22,16 +21,6 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
-
-# Mail configuration
-app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True').lower() == 'true'
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER')
-
-mail = Mail(app)
 
 # In-memory storage for appointments (Version 1 - no database)
 # Keeping for backward compatibility during transition
@@ -100,8 +89,8 @@ def signup():
                 'email': email
             })
         
-        # Create user in database (unverified)
-        success, message, user_id = database.create_user(full_name, email, password)
+        # Create user in database with patient ID and secret code
+        success, message, user_id, patient_id, secret_code = database.create_user(full_name, email, password)
         
         if not success:
             flash(message, 'error')
@@ -110,55 +99,52 @@ def signup():
                 'email': email
             })
         
-        # Generate verification code
-        verification_code = database.generate_reset_token()
-        expiry = datetime.now() + timedelta(minutes=10)
+        # Store patient credentials in session for display
+        session['new_patient_id'] = patient_id
+        session['new_secret_code'] = secret_code
+        session['new_user_name'] = full_name
         
-        # Store verification code in database
-        with database.get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE users 
-                SET email_verification_code = ?, email_verification_expiry = ?
-                WHERE id = ?
-            ''', (verification_code, expiry, user_id))
-            conn.commit()
-        
-        # Log email details for development
-        app.logger.info(f'Verification code generated for {email}')
-        app.logger.info(f'Recipient email: {email}')
-        app.logger.info(f'Verification code: {verification_code}')
-        app.logger.info(f'Email send attempt started to {email}')
-        
-        # Send verification email
-        send_success, send_message = send_signup_verification_email(email, verification_code)
-        
-        # Log SMTP result
-        app.logger.info(f'Email send result to {email}: {send_success} - {send_message}')
-        
-        if send_success:
-            flash('A verification code has been sent to your email. Please check your inbox.', 'success')
-        else:
-            flash(f'Verification code could not be sent: {send_message}', 'error')
-        
-        # Redirect to verification page
-        return redirect(url_for('verify_code', email=email))
+        flash('Account created successfully!', 'success')
+        return redirect(url_for('signup_confirmation'))
     
     return render_template('signup.html', form_data={})
 
 
+@app.route('/signup-confirmation')
+def signup_confirmation():
+    """Display patient ID and secret code after successful registration."""
+    patient_id = session.get('new_patient_id')
+    secret_code = session.get('new_secret_code')
+    user_name = session.get('new_user_name')
+    
+    if not patient_id or not secret_code:
+        flash('No registration data found. Please sign up first.', 'error')
+        return redirect(url_for('signup'))
+    
+    # Clear the session data after displaying
+    session.pop('new_patient_id', None)
+    session.pop('new_secret_code', None)
+    session.pop('new_user_name', None)
+    
+    return render_template('signup_confirmation.html', 
+                         patient_id=patient_id, 
+                         secret_code=secret_code,
+                         user_name=user_name)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """User login page."""
+    """User login page with Patient ID and Secret Code."""
     if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
+        patient_id = request.form.get('patient_id', '').strip().upper()
+        secret_code = request.form.get('secret_code', '').strip()
         
-        if not email or not password:
-            flash('Please enter both email and password.', 'error')
-            return render_template('login.html', form_data={'email': email})
+        if not patient_id or not secret_code:
+            flash('Please enter both Patient ID and Secret Code.', 'error')
+            return render_template('login.html', form_data={'patient_id': patient_id})
         
-        success, user = database.verify_password(email, password)
+        # Verify secret code against hash
+        success, user = database.verify_secret_code(patient_id, secret_code)
         
         if success:
             session['user_id'] = user['id']
@@ -169,8 +155,8 @@ def login():
             next_page = request.args.get('next')
             return redirect(next_page or url_for('dashboard'))
         else:
-            flash('Invalid email or password.', 'error')
-            return render_template('login.html', form_data={'email': email})
+            flash('Invalid Patient ID or Secret Code.', 'error')
+            return render_template('login.html', form_data={'patient_id': patient_id})
     
     return render_template('login.html', form_data={})
 
@@ -181,312 +167,6 @@ def logout():
     session.clear()
     flash('You have been logged out.', 'success')
     return redirect(url_for('index'))
-
-
-def send_reset_email(email, token):
-    """Send password reset verification code via email."""
-    # Check if SMTP is configured
-    username = app.config.get('MAIL_USERNAME')
-    password = app.config.get('MAIL_PASSWORD')
-    sender = app.config.get('MAIL_DEFAULT_SENDER')
-    
-    if not username or not password or not sender:
-        # SMTP not configured - return clear error, never log the token
-        app.logger.error('SMTP not configured: MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER must be set in .env')
-        return False, 'Email service not configured. Please contact administrator.'
-    
-    try:
-        msg = Message(
-            'HealthCare App - Password Reset Verification Code',
-            recipients=[email],
-            sender=sender
-        )
-        msg.body = f'''Your password reset verification code is: {token}
-
-This code will expire in 10 minutes.
-
-If you did not request a password reset, please ignore this email.
-
----
-HealthCare App'''
-        msg.html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2d24; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .card {{ background: #ffffff; border-radius: 12px; padding: 32px; box-shadow: 0 4px 8px rgba(90, 138, 110, 0.08); border: 1px solid #d4e0d7; }}
-        .logo {{ color: #5a8a6e; font-size: 24px; font-weight: 700; margin-bottom: 24px; }}
-        .code {{ background: #eef3ef; border-radius: 8px; padding: 16px; text-align: center; font-size: 32px; font-weight: 700; color: #5a8a6e; letter-spacing: 8px; margin: 24px 0; }}
-        .footer {{ margin-top: 24px; padding-top: 16px; border-top: 1px solid #d4e0d7; font-size: 14px; color: #6b8a72; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <div class="logo">⚕ HealthCare</div>
-            <h2 style="color: #1f2d24; margin-bottom: 16px;">Password Reset Request</h2>
-            <p>You requested a password reset for your HealthCare account. Use the verification code below:</p>
-            <div class="code">{token}</div>
-            <p>This code will expire in <strong>10 minutes</strong>.</p>
-            <p>If you did not request a password reset, please ignore this email.</p>
-            <div class="footer">
-                <p>— The HealthCare Team</p>
-                <p>This is an automated message, please do not reply.</p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>'''
-        mail.send(msg)
-        return True, 'Verification code sent to your email'
-    except Exception as e:
-        # Log error without exposing credentials or token
-        app.logger.error(f'Failed to send reset email to {email}: {type(e).__name__}')
-        return False, 'Failed to send verification email. Please try later.'
-
-
-def send_signup_verification_email(email, verification_code):
-    """Send signup verification code via email."""
-    # Check if SMTP is configured
-    username = app.config.get('MAIL_USERNAME')
-    password = app.config.get('MAIL_PASSWORD')
-    sender = app.config.get('MAIL_DEFAULT_SENDER')
-    
-    if not username or not password or not sender:
-        # SMTP not configured - return clear error, never log the token
-        app.logger.error('SMTP not configured: MAIL_USERNAME, MAIL_PASSWORD, and MAIL_DEFAULT_SENDER must be set in .env')
-        return False, 'Email service not configured. Please contact administrator.'
-    
-    try:
-        msg = Message(
-            'HealthCare App - Email Verification Code',
-            recipients=[email],
-            sender=sender
-        )
-        msg.body = f'''Your HealthCare account verification code is: {verification_code}
-
-This code will expire in 10 minutes.
-
-If you did not sign up for HealthCare, please ignore this email.
-
----
-HealthCare App'''
-        msg.html = f'''<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <style>
-        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2d24; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .card {{ background: #ffffff; border-radius: 12px; padding: 32px; box-shadow: 0 4px 8px rgba(90, 138, 110, 0.08); border: 1px solid #d4e0d7; }}
-        .logo {{ color: #5a8a6e; font-size: 24px; font-weight: 700; margin-bottom: 24px; }}
-        .code {{ background: #eef3ef; border-radius: 8px; padding: 16px; text-align: center; font-size: 32px; font-weight: 700; color: #5a8a6e; letter-spacing: 8px; margin: 24px 0; }}
-        .footer {{ margin-top: 24px; padding-top: 16px; border-top: 1px solid #d4e0d7; font-size: 14px; color: #6b8a72; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="card">
-            <div class="logo">⚕ HealthCare</div>
-            <h2 style="color: #1f2d24; margin-bottom: 16px;">Email Verification</h2>
-            <p>Use the verification code below to complete your account setup:</p>
-            <div class="code">{verification_code}</div>
-            <p>This code will expire in <strong>10 minutes</strong>.</p>
-            <p>If you did not sign up for HealthCare, please ignore this email.</p>
-            <div class="footer">
-                <p>— The HealthCare Team</p>
-                <p>This is an automated message, please do not reply.</p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>'''
-        mail.send(msg)
-        return True, 'Verification code sent to your email'
-    except Exception as e:
-        # Log error without exposing credentials or token
-        app.logger.error(f'Failed to send signup verification email to {email}: {type(e).__name__}')
-        return False, 'Failed to send verification email. Please try again later.'
-
-
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    """Forgot password page - request verification code."""
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-        
-        if not email:
-            flash('Please enter your email address.', 'error')
-            return render_template('forgot_password.html', form_data={'email': email})
-        
-        # Check rate limit
-        allowed, message = database.check_reset_rate_limit(email)
-        if not allowed:
-            flash(message, 'error')
-            return render_template('forgot_password.html', form_data={'email': email})
-        
-        # Generate and store reset token (always returns generic message for security)
-        success, token = database.set_reset_token(email)
-        
-        if success:
-            # Send email
-            send_success, send_message = send_reset_email(email, token)
-            if send_success:
-                flash('If an account exists with this email, a verification code has been sent.', 'success')
-            else:
-                flash(send_message, 'error')
-        else:
-            # Generic message to prevent email enumeration
-            flash('If an account exists with this email, a verification code has been sent.', 'success')
-        
-        return redirect(url_for('verify_code', email=email))
-    
-    return render_template('forgot_password.html', form_data={})
-
-
-@app.route('/verify-code', methods=['GET', 'POST'])
-def verify_code():
-    """Verify the 6-digit code sent via email."""
-    email = request.args.get('email', '').strip().lower()
-    
-    if not email:
-        flash('Invalid request. Please start over.', 'error')
-        return redirect(url_for('forgot_password'))
-    
-    if request.method == 'POST':
-        token = request.form.get('token', '').strip()
-        
-        if not token or len(token) != 6 or not token.isdigit():
-            flash('Please enter a valid 6-digit code.', 'error')
-            return render_template('verify_code.html', email=email)
-        
-        # Check if this is a signup verification code or password reset token
-        with database.get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, full_name, email, is_verified, reset_token, reset_token_expiry,
-                       email_verification_code, email_verification_expiry
-                FROM users WHERE email = ?
-            ''', (email,))
-            user = cursor.fetchone()
-        
-        if not user:
-            flash('Invalid verification code', 'error')
-            return render_template('verify_code.html', email=email)
-        
-        # Check if this is a signup verification (email_verification_code is set)
-        if user['email_verification_code'] and user['email_verification_expiry']:
-            # Signup verification flow
-            expiry = datetime.fromisoformat(user['email_verification_expiry'])
-            if datetime.now() > expiry:
-                # Expired signup code - generate a new one
-                new_code = database.generate_reset_token()
-                new_expiry = datetime.now() + timedelta(minutes=10)
-                with database.get_db_connection() as conn2:
-                    cursor2 = conn2.cursor()
-                    cursor2.execute('''
-                        UPDATE users 
-                        SET email_verification_code = ?, email_verification_expiry = ?
-                        WHERE email = ?
-                    ''', (new_code, new_expiry, email))
-                    conn2.commit()
-                flash('Verification code has expired. A new code has been sent to your email.', 'error')
-                return render_template('verify_code.html', email=email)
-            
-            if user['email_verification_code'] != token:
-                # Increment failed attempts
-                with database.get_db_connection() as conn3:
-                    cursor3 = conn3.cursor()
-                    cursor3.execute('''
-                        UPDATE users SET reset_attempts = reset_attempts + 1 WHERE email = ?
-                    ''', (email,))
-                    conn3.commit()
-                flash('Invalid verification code', 'error')
-                return render_template('verify_code.html', email=email)
-            
-            # Code is valid - activate the user account
-            with database.get_db_connection() as conn4:
-                cursor4 = conn4.cursor()
-                cursor4.execute('UPDATE users SET is_verified = 1, email_verification_code = NULL, email_verification_expiry = NULL, reset_attempts = 0 WHERE email = ?', (email,))
-                conn4.commit()
-            
-            # Log in the user
-            session['user_id'] = user['id']
-            session['user_name'] = user['full_name']
-            flash('Email verified! Your account is now activated.', 'success')
-            return redirect(url_for('dashboard'))
-        
-        # Password reset flow (check reset_token)
-        if user['reset_token']:
-            # Password reset flow
-            success, message, user_data = database.verify_reset_token(email, token)
-            
-            if success:
-                # Store verified email in session for reset password step
-                session['reset_email'] = email
-                return redirect(url_for('reset_password'))
-            else:
-                flash(message, 'error')
-                return render_template('verify_code.html', email=email)
-        
-        # Unknown state - invalid code
-        flash('Invalid verification code', 'error')
-        return render_template('verify_code.html', email=email)
-    
-    return render_template('verify_code.html', email=email)
-
-
-@app.route('/reset-password', methods=['GET', 'POST'])
-def reset_password():
-    """Reset password page - enter new password after code verification."""
-    # Check if user has verified the code
-    email = session.get('reset_email')
-    if not email:
-        flash('Please verify your code first.', 'error')
-        return redirect(url_for('forgot_password'))
-    
-    if request.method == 'POST':
-        password = request.form.get('password', '')
-        confirm_password = request.form.get('confirm_password', '')
-        
-        # Validation
-        errors = []
-        
-        if not password:
-            errors.append('Password is required.')
-        else:
-            if len(password) < 8:
-                errors.append('Password must be at least 8 characters.')
-            if not any(c.isupper() for c in password):
-                errors.append('Password must contain at least one uppercase letter.')
-            if not any(c.islower() for c in password):
-                errors.append('Password must contain at least one lowercase letter.')
-            if not any(c.isdigit() for c in password):
-                errors.append('Password must contain at least one number.')
-        
-        if password != confirm_password:
-            errors.append('Passwords do not match.')
-        
-        if errors:
-            for error in errors:
-                flash(error, 'error')
-            return render_template('reset_password.html', email=email)
-        
-        # Update password
-        success, message = database.update_password(email, password)
-        
-        if success:
-            # Clear session
-            session.pop('reset_email', None)
-            flash('Your password has been reset successfully. Please sign in with your new password.', 'success')
-            return redirect(url_for('login'))
-        else:
-            flash(message, 'error')
-            return render_template('reset_password.html', email=email)
-    
-    return render_template('reset_password.html', email=email)
 
 
 @app.route('/dashboard')

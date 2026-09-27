@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Account Created - HealthCare App{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-container">
+        <div class="auth-layout">
+            <!-- Left side: Welcome & Illustration -->
+            <div class="auth-welcome" aria-hidden="true">
+                <div class="auth-welcome-content">
+                    <div class="auth-illustration">
+                        <svg class="illustration-svg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Healthcare illustration with verified badge, ID card, and medical symbols">
+                            <!-- Background circles -->
+                            <circle cx="200" cy="200" r="180" fill="#eef3ef" opacity="0.5"/>
+                            <circle cx="200" cy="200" r="140" fill="#d4e8d9" opacity="0.4"/>
+                            
+                            <!-- Verified badge -->
+                            <g transform="translate(200, 130)" fill="#5a8a6e">
+                                <circle cx="0" cy="0" r="50"/>
+                                <path d="M-20,0 L-5,15 L25,-15" stroke="#ffffff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                            </g>
+                            
+                            <!-- ID Card -->
+                            <g transform="translate(80, 260)">
+                                <rect x="-60" y="-40" width="120" height="80" rx="8" fill="#ffffff" stroke="#5a8a6e" stroke-width="3"/>
+                                <rect x="-50" y="-30" width="100" height="20" rx="4" fill="#5a8a6e"/>
+                                <rect x="-40" y="0" width="80" height="30" rx="4" fill="#eef3ef" stroke="#5a8a6e" stroke-width="2"/>
+                                <text x="10" y="20" text-anchor="middle" font-family="monospace" font-size="14" fill="#5a8a6e" font-weight="bold">HC-2026</text>
+                            </g>
+                            
+                            <!-- Doctor figure -->
+                            <g transform="translate(290, 260)">
+                                <!-- Head -->
+                                <circle cx="0" cy="-40" r="22" fill="#f5d8b8"/>
+                                <!-- Body -->
+                                <path d="M-20,0 L-20,-50 L20,-50 L20,0 Z" fill="#5a8a6e" rx="4"/>
+                                <!-- Arms -->
+                                <path d="M-20,-30 Q-40,-20 -40,0" stroke="#f5d8b8" stroke-width="8" fill="none" stroke-linecap="round"/>
+                                <path d="M20,-30 Q40,-20 40,0" stroke="#f5d8b8" stroke-width="8" fill="none" stroke-linecap="round"/>
+                                <!-- Stethoscope -->
+                                <path d="M-10,-50 Q-30,-60 -30,-70" stroke="#c8a84a" stroke-width="3" fill="none" stroke-linecap="round"/>
+                                <circle cx="-30" cy="-78" r="6" fill="none" stroke="#c8a84a" stroke-width="3"/>
+                            </g>
+                            
+                            <!-- Floating decorative elements -->
+                            <g fill="#7ab88e" opacity="0.6">
+                                <circle cx="60" cy="80" r="8"/>
+                                <circle cx="340" cy="100" r="6"/>
+                                <circle cx="50" cy="320" r="10"/>
+                                <circle cx="350" cy="300" r="7"/>
+                            </g>
+                            
+                            <g fill="#c8a84a" opacity="0.5">
+                                <circle cx="100" cy="180" r="5"/>
+                                <circle cx="300" cy="160" r="4"/>
+                                <circle cx="80" cy="280" r="6"/>
+                                <circle cx="320" cy="240" r="5"/>
+                            </g>
+                        </svg>
+                    </div>
+                    <div class="auth-welcome-text">
+                        <h1>Account Created Successfully</h1>
+                        <p class="welcome-tagline">Your patient credentials have been generated</p>
+                        <ul class="welcome-features" role="list">
+                            <li>
+                                <span class="feature-icon" aria-hidden="true">✓</span>
+                                <span>Patient ID generated</span>
+                            </li>
+                            <li>
+                                <span class="feature-icon" aria-hidden="true">✓</span>
+                                <span>Secret code created</span>
+                            </li>
+                            <li>
+                                <span class="feature-icon" aria-hidden="true">✓</span>
+                                <span>Secure authentication enabled</span>
+                            </li>
+                            <li>
+                                <span class="feature-icon" aria-hidden="true">✓</span>
+                                <span>No email verification required</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right side: Credentials Card -->
+            <div class="auth-form-card">
+                <div class="auth-header">
+                    <div class="auth-logo">
+                        <span class="logo-icon" aria-hidden="true">⚕</span>
+                        <span class="logo-text">HealthCare</span>
+                    </div>
+                    <h1>Your Credentials</h1>
+                    <p class="auth-subtitle">Save these securely — they cannot be recovered</p>
+                </div>
+
+                <div class="credentials-display">
+                    <div class="credential-card">
+                        <div class="credential-label">Patient ID</div>
+                        <div class="credential-value" id="patient-id">{{ patient_id }}</div>
+                        <button type="button" class="btn btn-secondary btn-copy" onclick="copyToClipboard('patient-id')" aria-label="Copy Patient ID">
+                            <span class="copy-icon" aria-hidden="true">📋</span> Copy
+                        </button>
+                    </div>
+
+                    <div class="credential-card">
+                        <div class="credential-label">Secret Code</div>
+                        <div class="credential-value secret-code" id="secret-code">{{ secret_code }}</div>
+                        <button type="button" class="btn btn-secondary btn-copy" onclick="copyToClipboard('secret-code')" aria-label="Copy Secret Code">
+                            <span class="copy-icon" aria-hidden="true">📋</span> Copy
+                        </button>
+                    </div>
+                </div>
+
+                <div class="credentials-warning">
+                    <div class="warning-icon" aria-hidden="true">⚠</div>
+                    <div class="warning-text">
+                        <strong>Important:</strong> Your secret code is shown only once. 
+                        Save it in a secure location (password manager, physical safe, etc.). 
+                        It cannot be recovered or reset. If lost, you will need to contact support.
+                    </div>
+                </div>
+
+                <div class="credentials-actions">
+                    <a href="{{ url_for('login') }}" class="btn btn-primary btn-large btn-block">Continue to Login</a>
+                </div>
+
+                <div class="auth-footer">
+                    <p><a href="{{ url_for('signup') }}">Create another account</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent.trim();
+    
+    navigator.clipboard.writeText(text).then(function() {
+        const button = element.nextElementSibling;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="copy-icon" aria-hidden="true">✓</span> Copied!';
+        button.classList.add('copied');
+        setTimeout(function() {
+            button.innerHTML = originalText;
+            button.classList.remove('copied');
+        }, 2000);
+    }).catch(function(err) {
+        console.error('Failed to copy:', err);
+    });
+}
+</script>
+{% endblock %}

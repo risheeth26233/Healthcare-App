@@ -10,24 +10,28 @@
             <div class="auth-welcome" aria-hidden="true">
                 <div class="auth-welcome-content">
                     <div class="auth-illustration">
-                        <svg class="illustration-svg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Healthcare illustration with doctor, heart, and medical cross symbols">
+                        <svg class="illustration-svg" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Healthcare illustration with patient ID card, lock, and medical symbols">
                             <!-- Background circles -->
                             <circle cx="200" cy="200" r="180" fill="#eef3ef" opacity="0.5"/>
                             <circle cx="200" cy="200" r="140" fill="#d4e8d9" opacity="0.4"/>
                             
-                            <!-- Medical cross symbol -->
-                            <g transform="translate(200, 140)">
-                                <rect x="-25" y="-50" width="50" height="100" rx="8" fill="#5a8a6e"/>
-                                <rect x="-50" y="-25" width="100" height="50" rx="8" fill="#5a8a6e"/>
+                            <!-- Patient ID Card -->
+                            <g transform="translate(200, 130)">
+                                <rect x="-70" y="-50" width="140" height="100" rx="12" fill="#ffffff" stroke="#5a8a6e" stroke-width="4"/>
+                                <rect x="-60" y="-40" width="120" height="24" rx="4" fill="#5a8a6e"/>
+                                <rect x="-50" y="-10" width="100" height="40" rx="4" fill="#eef3ef" stroke="#5a8a6e" stroke-width="2"/>
+                                <text x="20" y="15" text-anchor="middle" font-family="monospace" font-size="16" fill="#5a8a6e" font-weight="bold">HC-2026</text>
                             </g>
                             
-                            <!-- Heart symbol -->
-                            <g transform="translate(120, 260)" fill="#c05a5a">
-                                <path d="M0,0 C-15,-10 -30,5 -30,20 C-30,35 -15,45 0,60 C15,45 30,35 30,20 C30,5 15,-10 0,0 Z"/>
+                            <!-- Lock symbol -->
+                            <g transform="translate(120, 260)" fill="#c8a84a">
+                                <rect x="-20" y="0" width="40" height="30" rx="4" stroke="#c8a84a" stroke-width="4" fill="none"/>
+                                <path d="M-15,0 L-15,-20 Q-15,-28 0,-28 Q15,-28 15,-20 L15,0" stroke="#c8a84a" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="0" cy="-8" r="5" fill="none" stroke="#c8a84a" stroke-width="3"/>
                             </g>
                             
                             <!-- Doctor figure -->
-                            <g transform="translate(280, 260)">
+                            <g transform="translate(290, 260)">
                                 <!-- Head -->
                                 <circle cx="0" cy="-40" r="22" fill="#f5d8b8"/>
                                 <!-- Body -->
@@ -89,27 +93,28 @@
                         <span class="logo-text">HealthCare</span>
                     </div>
                     <h1>Welcome Back</h1>
-                    <p class="auth-subtitle">Sign in to access your health dashboard</p>
+                    <p class="auth-subtitle">Enter your Patient ID and Secret Code to sign in</p>
                 </div>
 
                 <form method="POST" class="auth-form" novalidate>
                     <div class="form-group">
-                        <label for="email">Email Address <span class="required" aria-hidden="true">*</span></label>
-                        <input type="email" id="email" name="email" required 
-                               value="{{ form_data.email or '' }}" 
-                               placeholder="john@example.com"
-                               autocomplete="email"
-                               aria-describedby="email-hint">
-                        <span id="email-hint" class="form-hint">We'll never share your email</span>
+                        <label for="patient_id">Patient ID <span class="required" aria-hidden="true">*</span></label>
+                        <input type="text" id="patient_id" name="patient_id" required 
+                               value="{{ form_data.patient_id or '' }}" 
+                               placeholder="HC-2026-00001"
+                               autocomplete="username"
+                               aria-describedby="patient-id-hint"
+                               style="text-transform: uppercase;">
+                        <span id="patient-id-hint" class="form-hint">Format: HC-YYYY-NNNNN</span>
                     </div>
 
                     <div class="form-group">
-                        <label for="password">Password <span class="required" aria-hidden="true">*</span></label>
-                        <input type="password" id="password" name="password" required 
-                               placeholder="Enter your password"
+                        <label for="secret_code">Secret Code <span class="required" aria-hidden="true">*</span></label>
+                        <input type="password" id="secret_code" name="secret_code" required 
+                               placeholder="XXXX-XXXX-XXXX-XXXX"
                                autocomplete="current-password"
-                               aria-describedby="password-hint">
-                        <span id="password-hint" class="form-hint">Forgot password? <a href="#" style="color: var(--primary-color);">Reset it</a></span>
+                               aria-describedby="secret-code-hint">
+                        <span id="secret-code-hint" class="form-hint">Format: XXXX-XXXX-XXXX-XXXX</span>
                     </div>
 
                     <button type="submit" class="btn btn-primary btn-large btn-block">Sign In</button>

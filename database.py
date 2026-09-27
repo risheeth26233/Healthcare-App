@@ -5,7 +5,7 @@ Handles SQLite database operations for users and appointments.
 import sqlite3
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -41,7 +41,9 @@ def init_db():
                 last_reset_request TIMESTAMP,
                 is_verified INTEGER DEFAULT 0,
                 email_verification_code TEXT,
-                email_verification_expiry TIMESTAMP
+                email_verification_expiry TIMESTAMP,
+                patient_id TEXT UNIQUE,
+                secret_code_hash TEXT
             )
         ''')
         
@@ -50,6 +52,9 @@ def init_db():
         
         # Add email verification columns if they don't exist (migration for existing databases)
         _add_email_verification_columns_if_missing(cursor)
+        
+        # Add patient ID and secret code hash columns if they don't exist (migration for existing databases)
+        _add_patient_auth_columns_if_missing(cursor)
         
         # Appointments table
         cursor.execute('''
@@ -95,26 +100,86 @@ def _add_email_verification_columns_if_missing(cursor):
     if 'email_verification_expiry' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN email_verification_expiry TIMESTAMP')
 
-def create_user(full_name, email, password):
+
+def _add_patient_auth_columns_if_missing(cursor):
+    """Add patient ID and secret code hash columns to users table if they don't exist."""
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'patient_id' not in columns:
+        cursor.execute('ALTER TABLE users ADD COLUMN patient_id TEXT')
+        # Create unique index for patient_id (can't add UNIQUE column directly in SQLite ALTER)
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_patient_id ON users(patient_id)')
+    if 'secret_code_hash' not in columns:
+        cursor.execute('ALTER TABLE users ADD COLUMN secret_code_hash TEXT')
+
+def generate_patient_id():
+    """Generate a unique patient ID in format HC-YYYY-NNNNN."""
+    from datetime import datetime
+    year = datetime.now().year
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        # Get max sequence number for this year to generate next sequential number
+        # Format: HC-YYYY-NNNNN, sequence starts at position 9 (1-indexed)
+        cursor.execute('''
+            SELECT MAX(CAST(SUBSTR(patient_id, 9) AS INTEGER)) as max_seq 
+            FROM users 
+            WHERE patient_id LIKE ?
+        ''', (f'HC-{year}-%',))
+        row = cursor.fetchone()
+        max_seq = row['max_seq'] if row['max_seq'] is not None else 0
+        # Next sequence number
+        sequence = max_seq + 1
+        return f'HC-{year}-{sequence:05d}'
+
+
+def generate_secret_code():
+    """Generate a strong random secret code for patient authentication."""
+    # Use secrets module for cryptographically secure random generation
+    # Format: 4 groups of 4 alphanumeric characters = 16 chars total
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    groups = []
+    for _ in range(4):
+        group = ''.join(secrets.choice(alphabet) for _ in range(4))
+        groups.append(group)
+    return '-'.join(groups)
+
+
+def create_user(full_name, email, password, patient_id=None, secret_code_hash=None):
     """
-    Create a new user with hashed password.
+    Create a new user with hashed password and optional patient authentication.
+    
+    If patient_id and secret_code_hash are not provided, they will be generated.
     
     Returns:
-        tuple: (success, message, user_id or None)
+        tuple: (success, message, user_id or None, patient_id, secret_code)
     """
     password_hash = generate_password_hash(password)
+    
+    # Generate patient authentication if not provided
+    if patient_id is None:
+        patient_id = generate_patient_id()
+    if secret_code_hash is None:
+        secret_code = generate_secret_code()
+        secret_code_hash = generate_password_hash(secret_code)
+    else:
+        secret_code = None  # We don't have the plaintext if hash was provided
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO users (full_name, email, password_hash) VALUES (?, ?, ?)',
-                (full_name, email, password_hash)
+                'INSERT INTO users (full_name, email, password_hash, patient_id, secret_code_hash) VALUES (?, ?, ?, ?, ?)',
+                (full_name, email, password_hash, patient_id, secret_code_hash)
             )
             conn.commit()
-            return True, 'Account created successfully', cursor.lastrowid
-        except sqlite3.IntegrityError:
-            return False, 'An account with this email already exists', None
+            user_id = cursor.lastrowid
+            return True, 'Account created successfully', user_id, patient_id, secret_code
+        except sqlite3.IntegrityError as e:
+            if 'patient_id' in str(e):
+                # Retry with new patient ID (very unlikely collision)
+                return create_user(full_name, email, password, None, secret_code_hash)
+            return False, 'An account with this email already exists', None, None, None
         except Exception as e:
             return False, f'An error occurred: {str(e)}', None
 
@@ -220,15 +285,16 @@ def set_reset_token(email):
         tuple: (success, token or error_message)
     """
     token = generate_reset_token()
-    expiry = datetime.now() + timedelta(minutes=10)
+    expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
+    reset_request_time = datetime.now(timezone.utc).replace(tzinfo=None)
     
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE users 
-            SET reset_token = ?, reset_token_expiry = ?, reset_attempts = 0, last_reset_request = CURRENT_TIMESTAMP
+            SET reset_token = ?, reset_token_expiry = ?, reset_attempts = 0, last_reset_request = ?
             WHERE email = ?
-        ''', (token, expiry, email))
+        ''', (token, expiry, reset_request_time, email))
         conn.commit()
         
         if cursor.rowcount > 0:
@@ -268,7 +334,9 @@ def verify_reset_token(email, token):
         # Check expiry
         if user['reset_token_expiry']:
             expiry = datetime.fromisoformat(user['reset_token_expiry'])
-            if datetime.now() > expiry:
+            # Compare in UTC
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            if now_utc > expiry:
                 return False, 'Verification code has expired. Please request a new code.', None
         
         return True, 'Token verified', user
@@ -284,6 +352,30 @@ def clear_reset_token(email):
             WHERE email = ?
         ''', (email,))
         conn.commit()
+
+
+def get_user_by_patient_id(patient_id):
+    """Get user by patient ID."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE patient_id = ?', (patient_id,))
+        return cursor.fetchone()
+
+
+def verify_secret_code(patient_id, secret_code):
+    """
+    Verify a patient's secret code against its stored hash.
+    
+    Returns:
+        tuple: (success, user_data or None)
+    """
+    user = get_user_by_patient_id(patient_id)
+    if not user or not user['secret_code_hash']:
+        return False, None
+    
+    if check_password_hash(user['secret_code_hash'], secret_code):
+        return True, user
+    return False, None
 
 
 def update_password(email, new_password):
@@ -325,8 +417,9 @@ def check_reset_rate_limit(email):
             return True, None
         
         last_request = datetime.fromisoformat(user['last_reset_request'])
-        # Limit: 1 request per minute
-        if datetime.now() - last_request < timedelta(minutes=1):
+        # Compare in UTC: both timestamps are naive UTC
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        if now_utc - last_request < timedelta(minutes=1):
             return False, 'Please wait before requesting another code.'
         
         return True, None
