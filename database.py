@@ -151,7 +151,7 @@ def _add_reset_columns_if_missing(cursor):
     if DB_CONFIG['driver'] == 'sqlite':
         columns = [col[1] for col in cursor.fetchall()]
     else:
-        columns = [col[0] for col in cursor.fetchall()]
+        columns = [col['column_name'] for col in cursor.fetchall()]
     
     if 'reset_token' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
@@ -171,7 +171,7 @@ def _add_email_verification_columns_if_missing(cursor):
         columns = [col[1] for col in cursor.fetchall()]
     else:
         cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
-        columns = [col[0] for col in cursor.fetchall()]
+        columns = [col['column_name'] for col in cursor.fetchall()]
     
     if 'is_verified' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0')
@@ -188,7 +188,7 @@ def _add_patient_auth_columns_if_missing(cursor):
         columns = [col[1] for col in cursor.fetchall()]
     else:
         cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
-        columns = [col[0] for col in cursor.fetchall()]
+        columns = [col['column_name'] for col in cursor.fetchall()]
     
     if 'patient_id' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN patient_id TEXT')
