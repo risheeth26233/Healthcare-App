@@ -232,6 +232,137 @@ Access wellness resources for pregnancy and maternity health. Educational inform
 - Health assessments are screening tools, not medical diagnostics
 - No two-factor authentication
 
+## Deployment Setup
+
+This section describes how to deploy the Healthcare-App to a production environment using Render with PostgreSQL.
+
+### Prerequisites
+
+- GitHub account with access to this repository
+- Render account (free tier available)
+- Basic familiarity with environment variables and web deployment
+
+### Production Architecture
+
+- **Web Service**: Gunicorn WSGI server running the Flask application
+- **Database**: PostgreSQL (managed by Render)
+- **HTTPS**: Automatic SSL/TLS via Render
+- **Environment Variables**: Configured in Render dashboard
+
+### Deployment Steps
+
+#### 1. Push to GitHub
+
+Ensure your code is pushed to the GitHub repository:
+
+```bash
+git add .
+git commit -m "Prepare for deployment"
+git push origin main
+```
+
+#### 2. Create Render Account
+
+Sign up at [render.com](https://render.com) if you haven't already.
+
+#### 3. Create PostgreSQL Database
+
+1. In Render dashboard, click **New** → **PostgreSQL**
+2. Configure:
+   - Name: `healthcare-db` (or your preferred name)
+   - Database: `healthcare_app`
+   - User: `healthcare_user`
+   - Plan: Free (for testing) or Starter/Pro for production
+3. Click **Create Database**
+4. Note the **Internal Database URL** - this will be your `DATABASE_URL`
+
+#### 4. Create Web Service
+
+1. In Render dashboard, click **New** → **Web Service**
+2. Connect your GitHub repository: `risheeth26233/Healthcare-App`
+3. Configure:
+   - Name: `healthcare-app`
+   - Runtime: `Python`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `gunicorn app:app`
+   - Plan: Free (for testing) or Starter/Pro for production
+
+#### 5. Configure Environment Variables
+
+In the web service settings, add these environment variables:
+
+| Key | Value | Notes |
+|-----|-------|-------|
+| `FLASK_ENV` | `production` | Required |
+| `FLASK_DEBUG` | `false` | Required for production |
+| `SECRET_KEY` | *generate a strong random value* | **Required** - generate with `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `DATABASE_URL` | *paste Internal Database URL from step 3* | **Required** - automatically available if you link the database |
+
+**Optional variables:**
+| Key | Value | Notes |
+|-----|-------|-------|
+| `FLASK_HOST` | `0.0.0.0` | Default |
+| `PORT` | (auto) | Render sets this automatically |
+| `FLASK_DEBUG` | `false` | Explicitly disable debug |
+
+#### 6. Deploy
+
+Click **Create Web Service** and wait for deployment to complete. Render will:
+1. Install dependencies from `requirements.txt`
+2. Run the build command
+3. Start the application with gunicorn
+4. Provide a public HTTPS URL (e.g., `https://healthcare-app.onrender.com`)
+
+### Local Development
+
+Local development continues to work with SQLite:
+
+```bash
+# Clone and setup
+git clone https://github.com/risheeth26233/Healthcare-App.git
+cd Healthcare-App
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your local settings (optional)
+python app.py
+```
+
+The app will be available at `http://localhost:5000` with SQLite database.
+
+### Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SECRET_KEY` | Yes (prod) | - | Flask secret key for sessions |
+| `FLASK_ENV` | No | `development` | `development` or `production` |
+| `FLASK_DEBUG` | No | `true` | `true` or `false` |
+| `FLASK_HOST` | No | `0.0.0.0` | Bind address |
+| `PORT` | No | `5000` | Port number (Render sets automatically) |
+| `DATABASE_URL` | Yes (prod) | `sqlite:///healthcare.db` | Database connection string |
+| `DATABASE_URL` | No (dev) | `sqlite:///healthcare.db` | Local SQLite path |
+
+### Database Migration Notes
+
+- The application automatically initializes tables on first run
+- Schema migrations for existing columns are handled in `database.py`
+- For PostgreSQL, the `SERIAL` type is used instead of `AUTOINCREMENT`
+- All queries use parameterized placeholders compatible with both SQLite and PostgreSQL
+
+### Security Considerations for Production
+
+1. **Always use a strong SECRET_KEY** - Generate with: `python -c "import secrets; print(secrets.token_hex(32))"`
+2. **Never commit `.env` or `.env.local`** - These are in `.gitignore`
+3. **Use HTTPS only** - Render provides automatic HTTPS
+4. **Set `FLASK_ENV=production` and `FLASK_DEBUG=false`** - Disables debug mode
+5. **Use PostgreSQL in production** - SQLite is not suitable for multi-user production
+
+### Troubleshooting
+
+- **Build fails**: Check `requirements.txt` for correct package versions
+- **Database connection fails**: Verify `DATABASE_URL` is correct and database is in same region
+- **App crashes on startup**: Check Render logs for Python errors
+- **Static files not loading**: Ensure `static/` folder is in repository
+
 ## Future Enhancements
 
 - User profile image upload

@@ -14,11 +14,22 @@ import database
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'healthcare-app-secret-key-change-in-production')
+
+# Secret key - MUST be set via environment variable in production
+secret_key = os.environ.get('SECRET_KEY')
+if not secret_key:
+    # Development fallback only - warn but don't fail in development
+    secret_key = 'healthcare-app-secret-key-change-in-production'
+    print("WARNING: Using default SECRET_KEY. Set SECRET_KEY environment variable for production!")
+elif secret_key == 'healthcare-app-secret-key-change-in-production':
+    print("WARNING: Using default SECRET_KEY. Set a strong SECRET_KEY environment variable for production!")
+
+app.secret_key = secret_key
 
 # Session configuration for security
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+# SECURE cookies only in production (when not in development)
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') == 'production'
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
 
@@ -387,4 +398,8 @@ def pregnancy():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Development server only - use gunicorn in production
+    debug = os.environ.get('FLASK_DEBUG', 'true').lower() == 'true'
+    host = os.environ.get('FLASK_HOST', '0.0.0.0')
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=debug, host=host, port=port)

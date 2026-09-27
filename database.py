@@ -1,40 +1,107 @@
 """
 Database module for the Healthcare Flask application.
-Handles SQLite database operations for users and appointments.
+Supports both SQLite (local development) and PostgreSQL (production).
 """
-import sqlite3
 import os
+import sqlite3
 import secrets
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
+from urllib.parse import urlparse
 
-# Database file path
-DB_PATH = os.path.join(os.path.dirname(__file__), 'healthcare.db')
+# Database configuration
+DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///healthcare.db')
+
+# Parse database URL to determine driver and connection params
+def _parse_database_url(url):
+    """Parse database URL and return connection parameters."""
+    parsed = urlparse(url)
+    return {
+        'driver': parsed.scheme,
+        'host': parsed.hostname,
+        'port': parsed.port,
+        'database': parsed.path.lstrip('/'),
+        'username': parsed.username,
+        'password': parsed.password,
+    }
+
+DB_CONFIG = _parse_database_url(DATABASE_URL)
 
 @contextmanager
 def get_db_connection():
-    """Get a database connection with row factory."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
+    """Get a database connection with row factory.
+    
+    Supports both SQLite (local) and PostgreSQL (production).
+    """
+    driver = DB_CONFIG['driver']
+    
+    if driver == 'sqlite':
+        # SQLite connection
+        db_path = DB_CONFIG['database']
+        if db_path.startswith('/'):
+            # Absolute path
+            path = db_path
+        else:
+            # Relative path - make it relative to this file
+            path = os.path.join(os.path.dirname(__file__), db_path)
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        try:
+            yield conn
+        finally:
+            conn.close()
+    elif driver in ('postgres', 'postgresql'):
+        # PostgreSQL connection
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(
+            host=DB_CONFIG['host'],
+            port=DB_CONFIG['port'] or 5432,
+            database=DB_CONFIG['database'],
+            user=DB_CONFIG['username'],
+            password=DB_CONFIG['password'],
+            cursor_factory=RealDictCursor
+        )
+        conn.autocommit = False
+        try:
+            yield conn
+        finally:
+            conn.close()
+    else:
+        raise ValueError(f"Unsupported database driver: {driver}")
+
+def _get_placeholder():
+    """Return the appropriate placeholder for the current database driver."""
+    return '?' if DB_CONFIG['driver'] == 'sqlite' else '%s'
+
+def _get_autoincrement():
+    """Return the appropriate autoincrement syntax for the current database driver."""
+    return 'AUTOINCREMENT' if DB_CONFIG['driver'] == 'sqlite' else 'SERIAL'
+
+def _get_timestamp_default():
+    """Return the appropriate timestamp default for the current database driver."""
+    if DB_CONFIG['driver'] == 'sqlite':
+        return 'DEFAULT CURRENT_TIMESTAMP'
+    else:
+        return 'DEFAULT NOW()'
 
 def init_db():
     """Initialize the database with required tables."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        placeholder = _get_placeholder()
+        autoinc = _get_autoincrement()
+        ts_default = _get_timestamp_default()
         
         # Users table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY {autoinc},
                 full_name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP {ts_default},
                 reset_token TEXT,
                 reset_token_expiry TIMESTAMP,
                 reset_attempts INTEGER DEFAULT 0,
@@ -57,26 +124,30 @@ def init_db():
         _add_patient_auth_columns_if_missing(cursor)
         
         # Appointments table
-        cursor.execute('''
+        cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS appointments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id INTEGER PRIMARY KEY {autoinc},
                 user_id INTEGER NOT NULL,
                 doctor_id INTEGER NOT NULL,
                 appointment_date TEXT NOT NULL,
                 appointment_time TEXT NOT NULL,
                 notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP {ts_default},
                 FOREIGN KEY (user_id) REFERENCES users (id)
             )
         ''')
         
-        conn.commit()
+        conn.commit
 
 
 def _add_reset_columns_if_missing(cursor):
     """Add password reset columns to users table if they don't exist."""
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
+    placeholder = _get_placeholder()
+    cursor.execute("PRAGMA table_info(users)" if DB_CONFIG['driver'] == 'sqlite' else "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+    if DB_CONFIG['driver'] == 'sqlite':
+        columns = [col[1] for col in cursor.fetchall()]
+    else:
+        columns = [col[0] for col in cursor.fetchall()]
     
     if 'reset_token' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
@@ -90,8 +161,13 @@ def _add_reset_columns_if_missing(cursor):
 
 def _add_email_verification_columns_if_missing(cursor):
     """Add email verification columns to users table if they don't exist."""
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
+    placeholder = _get_placeholder()
+    if DB_CONFIG['driver'] == 'sqlite':
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+    else:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+        columns = [col[0] for col in cursor.fetchall()]
     
     if 'is_verified' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0')
@@ -103,29 +179,45 @@ def _add_email_verification_columns_if_missing(cursor):
 
 def _add_patient_auth_columns_if_missing(cursor):
     """Add patient ID and secret code hash columns to users table if they don't exist."""
-    cursor.execute("PRAGMA table_info(users)")
-    columns = [col[1] for col in cursor.fetchall()]
+    if DB_CONFIG['driver'] == 'sqlite':
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+    else:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+        columns = [col[0] for col in cursor.fetchall()]
     
     if 'patient_id' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN patient_id TEXT')
-        # Create unique index for patient_id (can't add UNIQUE column directly in SQLite ALTER)
-        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_patient_id ON users(patient_id)')
+        # Create unique index for patient_id
+        if DB_CONFIG['driver'] == 'sqlite':
+            cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_patient_id ON users(patient_id)')
+        else:
+            cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_patient_id ON users(patient_id)')
     if 'secret_code_hash' not in columns:
         cursor.execute('ALTER TABLE users ADD COLUMN secret_code_hash TEXT')
+
 
 def generate_patient_id():
     """Generate a unique patient ID in format HC-YYYY-NNNNN."""
     from datetime import datetime
     year = datetime.now().year
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Get max sequence number for this year to generate next sequential number
         # Format: HC-YYYY-NNNNN, sequence starts at position 9 (1-indexed)
-        cursor.execute('''
-            SELECT MAX(CAST(SUBSTR(patient_id, 9) AS INTEGER)) as max_seq 
-            FROM users 
-            WHERE patient_id LIKE ?
-        ''', (f'HC-{year}-%',))
+        if DB_CONFIG['driver'] == 'sqlite':
+            cursor.execute(f'''
+                SELECT MAX(CAST(SUBSTR(patient_id, 9) AS INTEGER)) as max_seq 
+                FROM users 
+                WHERE patient_id LIKE {placeholder}
+            ''', (f'HC-{year}-%',))
+        else:
+            cursor.execute(f'''
+                SELECT MAX(CAST(SUBSTR(patient_id, 9) AS INTEGER)) as max_seq 
+                FROM users 
+                WHERE patient_id LIKE {placeholder}
+            ''', (f'HC-{year}-%',))
         row = cursor.fetchone()
         max_seq = row['max_seq'] if row['max_seq'] is not None else 0
         # Next sequence number
@@ -165,37 +257,50 @@ def create_user(full_name, email, password, patient_id=None, secret_code_hash=No
     else:
         secret_code = None  # We don't have the plaintext if hash was provided
     
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                'INSERT INTO users (full_name, email, password_hash, patient_id, secret_code_hash) VALUES (?, ?, ?, ?, ?)',
+                f'INSERT INTO users (full_name, email, password_hash, patient_id, secret_code_hash) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})',
                 (full_name, email, password_hash, patient_id, secret_code_hash)
             )
             conn.commit()
-            user_id = cursor.lastrowid
+            
+            # Get the inserted user ID
+            if DB_CONFIG['driver'] == 'sqlite':
+                user_id = cursor.lastrowid
+            else:
+                cursor.execute('SELECT currval(pg_get_serial_sequence(\'users\', \'id\'))')
+                user_id = cursor.fetchone()[0]
+            
             return True, 'Account created successfully', user_id, patient_id, secret_code
-        except sqlite3.IntegrityError as e:
-            if 'patient_id' in str(e):
+        except Exception as e:
+            if 'patient_id' in str(e) or 'unique constraint' in str(e).lower():
                 # Retry with new patient ID (very unlikely collision)
                 return create_user(full_name, email, password, None, secret_code_hash)
-            return False, 'An account with this email already exists', None, None, None
-        except Exception as e:
-            return False, f'An error occurred: {str(e)}', None
+            if 'email' in str(e) or 'unique constraint' in str(e).lower():
+                return False, 'An account with this email already exists', None, None, None
+            return False, f'An error occurred: {str(e)}', None, None, None
+
 
 def get_user_by_email(email):
     """Get user by email address."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
+        cursor.execute(f'SELECT * FROM users WHERE email = {placeholder}', (email,))
         return cursor.fetchone()
+
 
 def get_user_by_id(user_id):
     """Get user by ID."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT id, full_name, email, created_at FROM users WHERE id = ?', (user_id,))
+        cursor.execute(f'SELECT id, full_name, email, created_at FROM users WHERE id = {placeholder}', (user_id,))
         return cursor.fetchone()
+
 
 def verify_password(email, password):
     """
@@ -209,6 +314,7 @@ def verify_password(email, password):
         return True, user
     return False, None
 
+
 def create_appointment(user_id, doctor_id, appointment_date, appointment_time, notes):
     """
     Create a new appointment for a user.
@@ -216,25 +322,34 @@ def create_appointment(user_id, doctor_id, appointment_date, appointment_time, n
     Returns:
         tuple: (success, message, appointment_id or None)
     """
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         try:
             cursor.execute(
-                '''INSERT INTO appointments 
+                f'''INSERT INTO appointments 
                    (user_id, doctor_id, appointment_date, appointment_time, notes)
-                   VALUES (?, ?, ?, ?, ?)''',
+                   VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})''',
                 (user_id, doctor_id, appointment_date, appointment_time, notes)
             )
             conn.commit()
-            return True, 'Appointment booked successfully', cursor.lastrowid
+            
+            if DB_CONFIG['driver'] == 'sqlite':
+                appointment_id = cursor.lastrowid
+            else:
+                cursor.execute('SELECT currval(pg_get_serial_sequence(\'appointments\', \'id\'))')
+                appointment_id = cursor.fetchone()[0]
+            return True, 'Appointment booked successfully', appointment_id
         except Exception as e:
             return False, f'An error occurred: {str(e)}', None
 
+
 def get_user_appointments(user_id):
     """Get all appointments for a user."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT a.*, d.name as doctor_name, d.specialization
             FROM appointments a
             LEFT JOIN (
@@ -245,16 +360,18 @@ def get_user_appointments(user_id):
                 SELECT 5, 'Dr. Lisa Thompson', 'Dermatology' UNION
                 SELECT 6, 'Dr. Robert Kim', 'Orthopedics'
             ) d ON a.doctor_id = d.id
-            WHERE a.user_id = ?
+            WHERE a.user_id = {placeholder}
             ORDER BY a.appointment_date, a.appointment_time
         ''', (user_id,))
         return cursor.fetchall()
 
+
 def get_appointment_by_id(appointment_id, user_id):
     """Get a specific appointment for a user."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT a.*, d.name as doctor_name, d.specialization
             FROM appointments a
             LEFT JOIN (
@@ -265,7 +382,7 @@ def get_appointment_by_id(appointment_id, user_id):
                 SELECT 5, 'Dr. Lisa Thompson', 'Dermatology' UNION
                 SELECT 6, 'Dr. Robert Kim', 'Orthopedics'
             ) d ON a.doctor_id = d.id
-            WHERE a.id = ? AND a.user_id = ?
+            WHERE a.id = {placeholder} AND a.user_id = {placeholder}
         ''', (appointment_id, user_id))
         return cursor.fetchone()
 
@@ -288,12 +405,13 @@ def set_reset_token(email):
     expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
     reset_request_time = datetime.now(timezone.utc).replace(tzinfo=None)
     
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             UPDATE users 
-            SET reset_token = ?, reset_token_expiry = ?, reset_attempts = 0, last_reset_request = ?
-            WHERE email = ?
+            SET reset_token = {placeholder}, reset_token_expiry = {placeholder}, reset_attempts = 0, last_reset_request = {placeholder}
+            WHERE email = {placeholder}
         ''', (token, expiry, reset_request_time, email))
         conn.commit()
         
@@ -309,11 +427,12 @@ def verify_reset_token(email, token):
     Returns:
         tuple: (success, message, user_data or None)
     """
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             SELECT id, full_name, email, reset_token, reset_token_expiry, reset_attempts
-            FROM users WHERE email = ?
+            FROM users WHERE email = {placeholder}
         ''', (email,))
         user = cursor.fetchone()
         
@@ -327,7 +446,7 @@ def verify_reset_token(email, token):
         # Check if token matches
         if user['reset_token'] != token:
             # Increment attempts
-            cursor.execute('UPDATE users SET reset_attempts = reset_attempts + 1 WHERE email = ?', (email,))
+            cursor.execute(f'UPDATE users SET reset_attempts = reset_attempts + 1 WHERE email = {placeholder}', (email,))
             conn.commit()
             return False, 'Invalid verification code', None
         
@@ -344,21 +463,23 @@ def verify_reset_token(email, token):
 
 def clear_reset_token(email):
     """Clear the reset token after successful password reset."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             UPDATE users 
             SET reset_token = NULL, reset_token_expiry = NULL, reset_attempts = 0
-            WHERE email = ?
+            WHERE email = {placeholder}
         ''', (email,))
         conn.commit()
 
 
 def get_user_by_patient_id(patient_id):
     """Get user by patient ID."""
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT * FROM users WHERE patient_id = ?', (patient_id,))
+        cursor.execute(f'SELECT * FROM users WHERE patient_id = {placeholder}', (patient_id,))
         return cursor.fetchone()
 
 
@@ -387,12 +508,13 @@ def update_password(email, new_password):
     """
     password_hash = generate_password_hash(new_password)
     
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('''
+        cursor.execute(f'''
             UPDATE users 
-            SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL, reset_attempts = 0
-            WHERE email = ?
+            SET password_hash = {placeholder}, reset_token = NULL, reset_token_expiry = NULL, reset_attempts = 0
+            WHERE email = {placeholder}
         ''', (password_hash, email))
         conn.commit()
         
@@ -408,9 +530,10 @@ def check_reset_rate_limit(email):
     Returns:
         tuple: (allowed, message)
     """
+    placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT last_reset_request FROM users WHERE email = ?', (email,))
+        cursor.execute(f'SELECT last_reset_request FROM users WHERE email = {placeholder}', (email,))
         user = cursor.fetchone()
         
         if not user or not user['last_reset_request']:

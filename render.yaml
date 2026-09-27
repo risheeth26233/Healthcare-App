@@ -1,0 +1,29 @@
+# Render deployment configuration for Healthcare-App
+# This file configures the web service and PostgreSQL database on Render.
+# 
+# IMPORTANT: This file does NOT contain secrets.
+# Secrets are configured via environment variables in the Render dashboard.
+
+services:
+  - type: web
+    name: healthcare-app
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    # The following are set via Render dashboard (not in this file):
+    # - SECRET_KEY: Generate a strong random value in Render dashboard
+    # - DATABASE_URL: Automatically set by Render when you add a PostgreSQL database
+    # - PORT: Automatically set by Render
+
+databases:
+  - name: healthcare-db
+    databaseName: healthcare_app
+    user: healthcare_user
+    plan: free  # or starter/pro for production
