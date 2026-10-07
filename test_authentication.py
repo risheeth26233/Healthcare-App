@@ -451,6 +451,22 @@ def test_sqlite_schema_is_initialized_locally():
     assert {'users', 'appointments'}.issubset(tables)
 
 
+def test_profile_template_handles_sqlite_and_postgres_timestamps():
+    """SQLite returns TIMESTAMP columns as strings, PostgreSQL as datetime objects."""
+    from datetime import datetime
+    from flask import render_template
+
+    base_user = {'id': 1, 'full_name': 'Timestamp Patient', 'patient_id': 'HC-2026-00001'}
+
+    with app_module.app.test_request_context():
+        html = render_template('profile.html', user=dict(base_user, created_at=datetime(2026, 1, 2, 3, 4, 5)))
+    assert '2026-01-02' in html
+
+    with app_module.app.test_request_context():
+        html = render_template('profile.html', user=dict(base_user, created_at='2026-01-02 03:04:05'))
+    assert '2026-01-02' in html
+
+
 if __name__ == '__main__':
     import pytest
     sys.exit(pytest.main([__file__, '-v']))

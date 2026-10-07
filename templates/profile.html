@@ -23,7 +23,7 @@
                 <span class="stat-label">Assessments</span>
             </div>
             <div class="stat-card">
-                <span class="stat-member">Since {{ user.created_at[:10] if user.created_at else '2024' }}</span>
+                <span class="stat-member">Since {{ (user.created_at|string)[:10] if user.created_at else '2024' }}</span>
                 <span class="stat-label">Member</span>
             </div>
         </div>
