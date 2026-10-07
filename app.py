@@ -187,7 +187,8 @@ def dashboard():
     return render_template('dashboard.html', 
                          user_name=user_name, 
                          upcoming=upcoming,
-                         appointments=user_appointments)
+                         appointments=user_appointments,
+                         today=datetime.now().strftime('%Y-%m-%d'))
 
 
 @app.route('/profile')

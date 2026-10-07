@@ -119,7 +119,7 @@
                         <td>{{ appt.appointment_time }}</td>
                         <td>
                             {% set appt_date = appt.appointment_date %}
-                            {% if appt_date >= (now|date('%Y-%m-%d')) %}
+                            {% if appt_date >= today %}
                                 <span class="status-badge upcoming">Upcoming</span>
                             {% else %}
                                 <span class="status-badge past">Completed</span>

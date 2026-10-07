@@ -12,9 +12,12 @@ Run with: python -m pytest test_authentication.py -v
 """
 import atexit
 import contextlib
+import datetime
 import os
 import re
 import sys
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -270,6 +273,130 @@ def test_login_requires_both_fields():
 
     assert response.status_code == 200
     assert 'Please enter both Patient ID and Secret Code.' in response.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# Route safety: no authenticated route may return 500 to an external browser
+# ---------------------------------------------------------------------------
+
+PROTECTED_ROUTES = (
+    '/dashboard',
+    '/profile',
+    '/assessment',
+    '/results',
+    '/appointment/1',
+    '/confirmation',
+)
+
+
+def _signed_in_client(full_name='Route Safety User'):
+    client = _client()
+    success, message, user_id, patient_id, secret_code = database.create_user(full_name)
+    assert success, message
+    response = client.post('/login', data={
+        'patient_id': patient_id,
+        'secret_code': secret_code,
+    })
+    assert response.status_code == 302
+    return client, user_id, patient_id, secret_code
+
+
+@pytest.mark.parametrize('path', PROTECTED_ROUTES)
+def test_unauthenticated_redirects_to_login_not_500(path):
+    """A brand-new browser hitting a protected route must be redirected, never 500."""
+    response = _client().get(path, follow_redirects=False)
+
+    assert response.status_code == 302, f'{path} returned {response.status_code}'
+    assert response.headers['Location'].startswith('/login')
+    assert '/login' in response.headers['Location']
+
+
+@pytest.mark.parametrize('path', PROTECTED_ROUTES)
+def test_unauthenticated_with_invalid_session_cookie_redirects_not_500(path):
+    """Garbage/expired session cookies must not crash the login check."""
+    response = _client().get(
+        path,
+        headers={'Cookie': 'session=garbage.value.here'},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302, f'{path} returned {response.status_code}'
+    assert response.headers['Location'].startswith('/login')
+
+
+@pytest.mark.parametrize('path', PROTECTED_ROUTES)
+def test_authenticated_protected_routes_never_return_500(path):
+    client, _user_id, _patient_id, _secret_code = _signed_in_client()
+
+    response = client.get(path, follow_redirects=False)
+
+    assert response.status_code != 500, f'{path} returned 500'
+    assert response.status_code in (200, 302)
+
+
+def test_dashboard_renders_for_user_with_appointments():
+    """Regression: dashboard.html used `now|date(...)`, which does not exist in
+    Jinja2, so /dashboard returned HTTP 500 for any user with an appointment."""
+    client, user_id, _patient_id, _secret_code = _signed_in_client('Appointment Owner')
+
+    today = datetime.date.today()
+    upcoming_date = (today + datetime.timedelta(days=7)).isoformat()
+    past_date = (today - datetime.timedelta(days=3)).isoformat()
+
+    success, message, _appt_id = database.create_appointment(
+        user_id, 1, upcoming_date, '10:30', 'upcoming visit'
+    )
+    assert success, message
+    success, message, _appt_id = database.create_appointment(
+        user_id, 2, past_date, '09:00', 'past visit'
+    )
+    assert success, message
+
+    response = client.get('/dashboard', follow_redirects=False)
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200, f'/dashboard returned {response.status_code}'
+    assert upcoming_date in html
+    assert past_date in html
+    assert 'status-badge upcoming' in html
+    assert 'status-badge past' in html
+
+
+def test_new_browser_full_demo_flow():
+    """A completely new browser must be able to browse, sign up, log in and use
+    the app without ever seeing a 500."""
+    client = _client()
+
+    for path in ('/', '/signup', '/login', '/doctors', '/pregnancy'):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, f'GET {path} returned {response.status_code}'
+
+    for path in PROTECTED_ROUTES:
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 302, f'GET {path} before login returned {response.status_code}'
+        assert response.headers['Location'].startswith('/login')
+
+    response = client.post('/signup', data={'full_name': 'New Browser Demo'}, follow_redirects=False)
+    assert response.status_code == 302
+    assert 'signup-confirmation' in response.headers['Location']
+
+    confirmation = client.get('/signup-confirmation').get_data(as_text=True)
+    patient_id = re.search(r'id="patient-id">\s*([^<\s]+)', confirmation).group(1)
+    secret_code = re.search(r'id="secret-code">\s*([^<\s]+)', confirmation).group(1)
+    assert PATIENT_ID_RE.match(patient_id)
+    assert SECRET_CODE_RE.match(secret_code)
+
+    response = client.post('/login', data={
+        'patient_id': patient_id,
+        'secret_code': secret_code,
+    }, follow_redirects=False)
+    assert response.status_code == 302
+    assert 'dashboard' in response.headers['Location']
+
+    for path in ('/dashboard', '/profile', '/assessment', '/doctors',
+                 '/appointment/1', '/'):
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 200, f'GET {path} after login returned {response.status_code}'
 
 
 # ---------------------------------------------------------------------------
