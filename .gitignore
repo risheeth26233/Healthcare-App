@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 healthcare.db
+test_healthcare_auth.db
 .env
 .venv/
 venv/

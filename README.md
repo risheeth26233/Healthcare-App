@@ -22,7 +22,7 @@ This is a student/prototype project intended for educational purposes and does n
 - **Flask**: Web framework (Flask==3.0.0)
 - **Python-Dotenv**: Environment variable loading (python-dotenv==1.0.0)
 - **SQLite**: Local database for user data and appointments
-- **Werkzeug**: Password hashing and security
+- **Werkzeug**: Secret Code hashing and security
 - **Secrets**: Secure token generation for Patient IDs and Secret Codes
 
 ## Project Architecture
@@ -55,9 +55,9 @@ The application follows the Flask Model-View-Controller pattern:
 ### Home → Create Account → Signup Confirmation → Login → Health Assessment
 
 1. **Home**: User lands on the home page and can navigate to create an account or log in
-2. **Create Account**: User provides full name, email, and password. A unique Patient ID (format: HC-YYYY-NNNNN) and Secret Code (format: XXXX-XXXX-XXXX-XXXX) are generated and stored securely. The Secret Code is shown only once on the confirmation page.
+2. **Create Account**: User provides their full name. A unique Patient ID (format: HC-YYYY-NNNNN) and Secret Code (format: XXXX-XXXX-XXXX-XXXX) are generated and stored securely. The Secret Code is shown only once on the confirmation page.
 3. **Signup Confirmation**: User sees their Patient ID and Secret Code with a warning to save the Secret Code securely. The Secret Code cannot be recovered or reset.
-4. **Login**: Users authenticate with their Patient ID and Secret Code. The Secret Code is verified against its bcrypt hash.
+4. **Login**: Users authenticate with their Patient ID and Secret Code. The Secret Code is verified against its stored hash.
 5. **Health Assessment**: Authenticated users fill out a health assessment form with personal data, vital signs, and symptoms.
 6. **Results**: Assessment data is processed and displayed with BMI calculation, vital signs evaluation, and health summary. Results use screening language, not medical diagnosis.
 7. **Doctor Directory**: Users can browse available doctors by specialization.
@@ -86,11 +86,12 @@ The system calculates:
 
 ## Authentication
 
-- **Signup**: New users register with full name, email, and password. A unique Patient ID (format: HC-YYYY-NNNNN) and Secret Code (format: XXXX-XXXX-XXXX-XXXX) are generated. The Secret Code is shown only once on the confirmation page.
-- **Secret Code**: 16-character alphanumeric code (4 groups of 4 characters), stored as bcrypt hash
-- **Login**: Patient ID + Secret Code authentication; Secret Code verified against bcrypt hash
+- **Signup**: New users register with their full name only - no email address and no password are collected. A unique Patient ID (format: HC-YYYY-NNNNN) and Secret Code (format: XXXX-XXXX-XXXX-XXXX) are generated. The Secret Code is shown only once on the confirmation page.
+- **Secret Code**: 16-character alphanumeric code (4 groups of 4 characters), stored as a hash
+- **Login**: Patient ID + Secret Code authentication; Secret Code verified against its stored hash
 - **Secret Code Recovery**: Not available — Secret Codes cannot be recovered or reset. Users must save their Secret Code securely during signup.
 - **Account Status**: Successful login creates a session with user ID and name
+- **Removed**: Email/OTP verification, password reset, and SMTP/Gmail authentication are not part of this application
 
 ### Required Environment Variables (see `.env.example`):
 
@@ -132,8 +133,8 @@ Dedicated wellness page providing general information and resources for pregnanc
 
 ## Security
 
-- Passwords are hashed using Werkzeug's `generate_password_hash` and `check_password_hash`
-- Secret Codes are hashed using the same secure mechanism (bcrypt via Werkzeug)
+- Secret Codes are hashed using Werkzeug's `generate_password_hash` and `check_password_hash`
+- No password or email address is collected, and no authentication email is ever sent
 - Session cookies have HTTP-only, Lax SameSite security flags
 - Patient ID uniqueness enforced by database UNIQUE constraint
 - Generic authentication error messages prevent enumeration attacks
@@ -180,13 +181,19 @@ All existing health calculation tests can be run:
 python test_health_calculations.py
 ```
 
+Authentication and database compatibility tests (Patient ID + Secret Code flow, SQLite/PostgreSQL checks):
+
+```bash
+python -m pytest test_authentication.py -v
+```
+
 Or with pytest:
 
 ```bash
-python -m pytest test_health_calculations.py -v
+python -m pytest -v
 ```
 
-Tests cover BMI calculation, BMI categories, blood pressure classification, blood glucose classification, heart rate classification, temperature classification, overall assessment, guidance language, input validation, and appointment validation.
+Tests cover BMI calculation, BMI categories, blood pressure classification, blood glucose classification, heart rate classification, temperature classification, overall assessment, guidance language, input validation, appointment validation, signup/login with Patient ID + Secret Code, removal of email/OTP/password-reset routes and functions, and SQLite/PostgreSQL SQL compatibility.
 
 ## Demo Walkthrough
 
@@ -194,13 +201,13 @@ Tests cover BMI calculation, BMI categories, blood pressure classification, bloo
 Navigate to the application entry point. The home page introduces the HealthCare App and provides navigation to key features.
 
 ### Create Account
-Users provide full name, email, and password. A unique Patient ID and Secret Code are generated. The Secret Code is shown only once on the confirmation page.
+Users provide their full name. A unique Patient ID and Secret Code are generated. The Secret Code is shown only once on the confirmation page.
 
 ### Signup Confirmation
 User sees their Patient ID and Secret Code. The Secret Code cannot be recovered or reset. User must save it securely (password manager, physical safe, etc.).
 
 ### Login
-Users enter their Patient ID and Secret Code. The Secret Code is verified against its bcrypt hash. Successful login redirects to the dashboard.
+Users enter their Patient ID and Secret Code. The Secret Code is verified against its stored hash. Successful login redirects to the dashboard.
 
 ### Health Assessment
 Authenticated users complete a health questionnaire with personal data, vital signs, and symptoms. The system calculates BMI, evaluates vital signs, and generates a health summary using screening language.

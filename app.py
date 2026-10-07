@@ -4,6 +4,7 @@ Main Flask application for the Patient Health Assessment and Doctor Appointment 
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from datetime import datetime, timedelta
 from functools import wraps
+import logging
 import os
 from dotenv import load_dotenv
 import health_calculations
@@ -12,6 +13,8 @@ import database
 
 # Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
@@ -57,67 +60,38 @@ def index():
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
-    """User registration page."""
+    """User registration page - Patient ID + Secret Code only (no email or password)."""
     if request.method == 'POST':
         full_name = request.form.get('full_name', '').strip()
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
-        confirm_password = request.form.get('confirm_password', '')
-        
+
         # Server-side validation
-        errors = []
-        
         if not full_name:
-            errors.append('Full name is required.')
-        elif len(full_name) < 2:
-            errors.append('Full name must be at least 2 characters.')
-        
-        if not email:
-            errors.append('Email address is required.')
-        elif '@' not in email or '.' not in email:
-            errors.append('Please enter a valid email address.')
-        
-        if not password:
-            errors.append('Password is required.')
-        else:
-            if len(password) < 8:
-                errors.append('Password must be at least 8 characters.')
-            if not any(c.isupper() for c in password):
-                errors.append('Password must contain at least one uppercase letter.')
-            if not any(c.islower() for c in password):
-                errors.append('Password must contain at least one lowercase letter.')
-            if not any(c.isdigit() for c in password):
-                errors.append('Password must contain at least one number.')
-        
-        if password != confirm_password:
-            errors.append('Passwords do not match.')
-        
-        if errors:
-            for error in errors:
-                flash(error, 'error')
-            return render_template('signup.html', form_data={
-                'full_name': full_name,
-                'email': email
-            })
-        
-        # Create user in database with patient ID and secret code
-        success, message, user_id, patient_id, secret_code = database.create_user(full_name, email, password)
-        
+            flash('Full name is required.', 'error')
+            return render_template('signup.html', form_data={'full_name': full_name})
+        if len(full_name) < 2:
+            flash('Full name must be at least 2 characters.', 'error')
+            return render_template('signup.html', form_data={'full_name': full_name})
+
+        # Create patient account; Patient ID and Secret Code are generated
+        try:
+            success, message, user_id, patient_id, secret_code = database.create_user(full_name)
+        except Exception:
+            # Never surface raw exceptions to the user
+            logger.exception('Unexpected error during signup')
+            success, message, patient_id, secret_code = False, database.ACCOUNT_CREATE_FAILED, None, None
+
         if not success:
             flash(message, 'error')
-            return render_template('signup.html', form_data={
-                'full_name': full_name,
-                'email': email
-            })
-        
-        # Store patient credentials in session for display
+            return render_template('signup.html', form_data={'full_name': full_name})
+
+        # Store patient credentials in session for one-time display
         session['new_patient_id'] = patient_id
         session['new_secret_code'] = secret_code
         session['new_user_name'] = full_name
-        
+
         flash('Account created successfully!', 'success')
         return redirect(url_for('signup_confirmation'))
-    
+
     return render_template('signup.html', form_data={})
 
 
@@ -155,7 +129,13 @@ def login():
             return render_template('login.html', form_data={'patient_id': patient_id})
         
         # Verify secret code against hash
-        success, user = database.verify_secret_code(patient_id, secret_code)
+        try:
+            success, user = database.verify_secret_code(patient_id, secret_code)
+        except Exception:
+            # Never surface raw exceptions to the user
+            logger.exception('Unexpected error during login')
+            flash('We could not sign you in right now. Please try again later.', 'error')
+            return render_template('login.html', form_data={'patient_id': patient_id})
         
         if success:
             session['user_id'] = user['id']
@@ -188,7 +168,13 @@ def dashboard():
     user_id = session.get('user_id')
     
     # Get upcoming appointments
-    user_appointments = database.get_user_appointments(user_id)
+    try:
+        user_appointments = database.get_user_appointments(user_id)
+    except Exception:
+        # Never surface raw exceptions to the user
+        logger.exception('Failed to load appointments for dashboard')
+        user_appointments = []
+        flash('We could not load your appointments right now. Please try again later.', 'error')
     upcoming = None
     if user_appointments:
         # Get the next upcoming appointment
@@ -209,7 +195,19 @@ def dashboard():
 def profile():
     """User profile page."""
     user_id = session.get('user_id')
-    user = database.get_user_by_id(user_id)
+    try:
+        user = database.get_user_by_id(user_id)
+    except Exception:
+        # Never surface raw exceptions to the user
+        logger.exception('Failed to load user profile')
+        flash('We could not load your profile right now. Please try again later.', 'error')
+        return redirect(url_for('dashboard'))
+
+    if not user:
+        flash('Account not found. Please log in again.', 'error')
+        session.clear()
+        return redirect(url_for('login'))
+
     return render_template('profile.html', user=user)
 
 

@@ -10,7 +10,7 @@
                 {{ user.full_name.split()[0][0] }}
             </div>
             <h1>{{ user.full_name }}</h1>
-            <p class="profile-email">{{ user.email }}</p>
+            <p class="profile-email">{{ user.patient_id }}</p>
         </div>
 
         <div class="profile-stats">
@@ -38,17 +38,15 @@
             <h2>Account Settings</h2>
             <div class="setting-item">
                 <div class="setting-info">
-                    <h3>Email Address</h3>
-                    <p>{{ user.email }}</p>
+                    <h3>Patient ID</h3>
+                    <p>{{ user.patient_id }}</p>
                 </div>
-                <button class="btn btn-sm btn-outline" disabled>Change Email</button>
             </div>
             <div class="setting-item">
                 <div class="setting-info">
-                    <h3>Password</h3>
-                    <p>Last changed: Recently</p>
+                    <h3>Secret Code</h3>
+                    <p>Shown only once during signup. It cannot be recovered or reset.</p>
                 </div>
-                <button class="btn btn-sm btn-outline" disabled>Change Password</button>
             </div>
         </div>
     </div>

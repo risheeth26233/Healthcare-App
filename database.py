@@ -2,16 +2,22 @@
 Database module for the Healthcare Flask application.
 Supports both SQLite (local development) and PostgreSQL (production).
 """
+import logging
 import os
 import sqlite3
 import secrets
-from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 from werkzeug.security import generate_password_hash, check_password_hash
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
+
 # Database configuration
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///healthcare.db')
+
+# User-facing messages. Raw exception text is never returned to the UI.
+ACCOUNT_CREATE_FAILED = 'We could not create your account right now. Please try again later.'
+APPOINTMENT_CREATE_FAILED = 'We could not book your appointment right now. Please try again later.'
 
 # Parse database URL to determine driver and connection params
 def _parse_database_url(url):
@@ -99,6 +105,10 @@ def init_db():
         ts_default = _get_timestamp_default()
         
         # Users table
+        # NOTE: email and password_hash are legacy columns that already exist in the
+        # production database with NOT NULL/UNIQUE constraints. They are kept for
+        # schema compatibility but are never used for authentication - the app
+        # authenticates with Patient ID + Secret Code only.
         cursor.execute(f'''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY {autoinc},
@@ -106,23 +116,10 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 created_at TIMESTAMP {ts_default},
-                reset_token TEXT,
-                reset_token_expiry TIMESTAMP,
-                reset_attempts INTEGER DEFAULT 0,
-                last_reset_request TIMESTAMP,
-                is_verified INTEGER DEFAULT 0,
-                email_verification_code TEXT,
-                email_verification_expiry TIMESTAMP,
                 patient_id TEXT UNIQUE,
                 secret_code_hash TEXT
             )
         ''')
-        
-        # Add password reset columns if they don't exist (migration for existing databases)
-        _add_reset_columns_if_missing(cursor)
-        
-        # Add email verification columns if they don't exist (migration for existing databases)
-        _add_email_verification_columns_if_missing(cursor)
         
         # Add patient ID and secret code hash columns if they don't exist (migration for existing databases)
         _add_patient_auth_columns_if_missing(cursor)
@@ -142,43 +139,6 @@ def init_db():
         ''')
         
         conn.commit()
-
-
-def _add_reset_columns_if_missing(cursor):
-    """Add password reset columns to users table if they don't exist."""
-    placeholder = _get_placeholder()
-    cursor.execute("PRAGMA table_info(users)" if DB_CONFIG['driver'] == 'sqlite' else "SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
-    if DB_CONFIG['driver'] == 'sqlite':
-        columns = [col[1] for col in cursor.fetchall()]
-    else:
-        columns = [col['column_name'] for col in cursor.fetchall()]
-    
-    if 'reset_token' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token TEXT')
-    if 'reset_token_expiry' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_token_expiry TIMESTAMP')
-    if 'reset_attempts' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN reset_attempts INTEGER DEFAULT 0')
-    if 'last_reset_request' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN last_reset_request TIMESTAMP')
-
-
-def _add_email_verification_columns_if_missing(cursor):
-    """Add email verification columns to users table if they don't exist."""
-    placeholder = _get_placeholder()
-    if DB_CONFIG['driver'] == 'sqlite':
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [col[1] for col in cursor.fetchall()]
-    else:
-        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
-        columns = [col['column_name'] for col in cursor.fetchall()]
-    
-    if 'is_verified' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0')
-    if 'email_verification_code' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN email_verification_code TEXT')
-    if 'email_verification_expiry' not in columns:
-        cursor.execute('ALTER TABLE users ADD COLUMN email_verification_expiry TIMESTAMP')
 
 
 def _add_patient_auth_columns_if_missing(cursor):
@@ -223,7 +183,7 @@ def generate_patient_id():
                 WHERE patient_id LIKE {placeholder}
             ''', (f'HC-{year}-%',))
         row = cursor.fetchone()
-        max_seq = row['max_seq'] if row['max_seq'] is not None else 0
+        max_seq = row['max_seq'] if row and row['max_seq'] is not None else 0
         # Next sequence number
         sequence = max_seq + 1
         return f'HC-{year}-{sequence:05d}'
@@ -241,60 +201,80 @@ def generate_secret_code():
     return '-'.join(groups)
 
 
-def create_user(full_name, email, password, patient_id=None, secret_code_hash=None):
+def _is_patient_id_collision(exc):
+    """Return True when a unique violation was caused by the patient_id column."""
+    text = str(exc).lower()
+    return ('unique' in text or 'duplicate' in text) and 'patient_id' in text
+
+
+def create_user(full_name, patient_id=None, secret_code_hash=None):
     """
-    Create a new user with hashed password and optional patient authentication.
-    
-    If patient_id and secret_code_hash are not provided, they will be generated.
-    
+    Create a new patient account.
+
+    Authentication is Patient ID + Secret Code only: no email address and no
+    password are collected. The legacy email/password_hash columns are NOT NULL
+    (and email is UNIQUE) in the existing schema, so non-routable placeholder
+    values are stored for them. Those values are never used for authentication
+    and no email is ever sent.
+
+    If patient_id and secret_code_hash are not provided, they are generated.
+
     Returns:
         tuple: (success, message, user_id or None, patient_id, secret_code)
     """
-    password_hash = generate_password_hash(password)
-    
-    # Generate patient authentication if not provided
-    if patient_id is None:
-        patient_id = generate_patient_id()
+    # Generate the secret code once so every retry stores the same hash.
     if secret_code_hash is None:
         secret_code = generate_secret_code()
         secret_code_hash = generate_password_hash(secret_code)
     else:
-        secret_code = None  # We don't have the plaintext if hash was provided
-    
+        secret_code = None  # We don't have the plaintext if the hash was provided
+
+    # Random value that satisfies the legacy NOT NULL password_hash constraint.
+    # No password authentication exists, so nothing can ever match it.
+    legacy_password_hash = generate_password_hash(secrets.token_urlsafe(32))
+
     placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
+    insert_sql = (
+        'INSERT INTO users (full_name, email, password_hash, patient_id, secret_code_hash) '
+        f'VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})'
+    )
+
+    for attempt in range(3):
         try:
-            cursor.execute(
-                f'INSERT INTO users (full_name, email, password_hash, patient_id, secret_code_hash) VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})',
-                (full_name, email, password_hash, patient_id, secret_code_hash)
+            if patient_id is None:
+                patient_id = generate_patient_id()
+
+            params = (
+                full_name,
+                f'{patient_id.lower()}@noemail.invalid',
+                legacy_password_hash,
+                patient_id,
+                secret_code_hash,
             )
-            conn.commit()
-            
-            # Get the inserted user ID
-            if DB_CONFIG['driver'] == 'sqlite':
-                user_id = cursor.lastrowid
-            else:
-                cursor.execute('SELECT currval(pg_get_serial_sequence(\'users\', \'id\'))')
-                user_id = cursor.fetchone()[0]
-            
+
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                if DB_CONFIG['driver'] == 'sqlite':
+                    cursor.execute(insert_sql, params)
+                    conn.commit()
+                    user_id = cursor.lastrowid
+                else:
+                    # psycopg2 uses RealDictCursor, so fetchone() returns a dict
+                    # and must be indexed by column name, never by position.
+                    cursor.execute(insert_sql + ' RETURNING id', params)
+                    user_id = cursor.fetchone()['id']
+                    conn.commit()
+
             return True, 'Account created successfully', user_id, patient_id, secret_code
-        except Exception as e:
-            if 'patient_id' in str(e) or 'unique constraint' in str(e).lower():
-                # Retry with new patient ID (very unlikely collision)
-                return create_user(full_name, email, password, None, secret_code_hash)
-            if 'email' in str(e) or 'unique constraint' in str(e).lower():
-                return False, 'An account with this email already exists', None, None, None
-            return False, f'An error occurred: {str(e)}', None, None, None
+        except Exception as exc:
+            logger.exception('Failed to create user account')
+            if _is_patient_id_collision(exc) and attempt < 2:
+                # Very unlikely patient ID collision - generate a new one and retry.
+                patient_id = None
+                continue
+            return False, ACCOUNT_CREATE_FAILED, None, None, None
 
-
-def get_user_by_email(email):
-    """Get user by email address."""
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'SELECT * FROM users WHERE email = {placeholder}', (email,))
-        return cursor.fetchone()
+    return False, ACCOUNT_CREATE_FAILED, None, None, None
 
 
 def get_user_by_id(user_id):
@@ -302,21 +282,8 @@ def get_user_by_id(user_id):
     placeholder = _get_placeholder()
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(f'SELECT id, full_name, email, created_at FROM users WHERE id = {placeholder}', (user_id,))
+        cursor.execute(f'SELECT id, full_name, patient_id, created_at FROM users WHERE id = {placeholder}', (user_id,))
         return cursor.fetchone()
-
-
-def verify_password(email, password):
-    """
-    Verify user password.
-    
-    Returns:
-        tuple: (success, user_data or None)
-    """
-    user = get_user_by_email(email)
-    if user and check_password_hash(user['password_hash'], password):
-        return True, user
-    return False, None
 
 
 def create_appointment(user_id, doctor_id, appointment_date, appointment_time, notes):
@@ -327,25 +294,30 @@ def create_appointment(user_id, doctor_id, appointment_date, appointment_time, n
         tuple: (success, message, appointment_id or None)
     """
     placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute(
-                f'''INSERT INTO appointments 
-                   (user_id, doctor_id, appointment_date, appointment_time, notes)
-                   VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})''',
-                (user_id, doctor_id, appointment_date, appointment_time, notes)
-            )
-            conn.commit()
-            
+    insert_sql = (
+        'INSERT INTO appointments '
+        '(user_id, doctor_id, appointment_date, appointment_time, notes) '
+        f'VALUES ({placeholder}, {placeholder}, {placeholder}, {placeholder}, {placeholder})'
+    )
+    params = (user_id, doctor_id, appointment_date, appointment_time, notes)
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
             if DB_CONFIG['driver'] == 'sqlite':
+                cursor.execute(insert_sql, params)
+                conn.commit()
                 appointment_id = cursor.lastrowid
             else:
-                cursor.execute('SELECT currval(pg_get_serial_sequence(\'appointments\', \'id\'))')
-                appointment_id = cursor.fetchone()[0]
-            return True, 'Appointment booked successfully', appointment_id
-        except Exception as e:
-            return False, f'An error occurred: {str(e)}', None
+                # psycopg2 uses RealDictCursor: fetchone() returns a dict, so it
+                # must be indexed by column name, never by position.
+                cursor.execute(insert_sql + ' RETURNING id', params)
+                appointment_id = cursor.fetchone()['id']
+                conn.commit()
+        return True, 'Appointment booked successfully', appointment_id
+    except Exception:
+        logger.exception('Failed to create appointment')
+        return False, APPOINTMENT_CREATE_FAILED, None
 
 
 def get_user_appointments(user_id):
@@ -391,93 +363,6 @@ def get_appointment_by_id(appointment_id, user_id):
         return cursor.fetchone()
 
 
-# Password Reset Functions
-
-def generate_reset_token():
-    """Generate a secure 6-digit verification code."""
-    return ''.join(secrets.choice('0123456789') for _ in range(6))
-
-
-def set_reset_token(email):
-    """
-    Generate and store a reset token for the given email.
-    
-    Returns:
-        tuple: (success, token or error_message)
-    """
-    token = generate_reset_token()
-    expiry = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=10)
-    reset_request_time = datetime.now(timezone.utc).replace(tzinfo=None)
-    
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'''
-            UPDATE users 
-            SET reset_token = {placeholder}, reset_token_expiry = {placeholder}, reset_attempts = 0, last_reset_request = {placeholder}
-            WHERE email = {placeholder}
-        ''', (token, expiry, reset_request_time, email))
-        conn.commit()
-        
-        if cursor.rowcount > 0:
-            return True, token
-        return False, 'User not found'
-
-
-def verify_reset_token(email, token):
-    """
-    Verify the reset token for the given email.
-    
-    Returns:
-        tuple: (success, message, user_data or None)
-    """
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'''
-            SELECT id, full_name, email, reset_token, reset_token_expiry, reset_attempts
-            FROM users WHERE email = {placeholder}
-        ''', (email,))
-        user = cursor.fetchone()
-        
-        if not user:
-            return False, 'Invalid verification code', None
-        
-        # Check attempts limit (max 5 attempts)
-        if user['reset_attempts'] >= 5:
-            return False, 'Too many failed attempts. Please request a new code.', None
-        
-        # Check if token matches
-        if user['reset_token'] != token:
-            # Increment attempts
-            cursor.execute(f'UPDATE users SET reset_attempts = reset_attempts + 1 WHERE email = {placeholder}', (email,))
-            conn.commit()
-            return False, 'Invalid verification code', None
-        
-        # Check expiry
-        if user['reset_token_expiry']:
-            expiry = datetime.fromisoformat(user['reset_token_expiry'])
-            # Compare in UTC
-            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-            if now_utc > expiry:
-                return False, 'Verification code has expired. Please request a new code.', None
-        
-        return True, 'Token verified', user
-
-
-def clear_reset_token(email):
-    """Clear the reset token after successful password reset."""
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'''
-            UPDATE users 
-            SET reset_token = NULL, reset_token_expiry = NULL, reset_attempts = 0
-            WHERE email = {placeholder}
-        ''', (email,))
-        conn.commit()
-
-
 def get_user_by_patient_id(patient_id):
     """Get user by patient ID."""
     placeholder = _get_placeholder()
@@ -501,55 +386,6 @@ def verify_secret_code(patient_id, secret_code):
     if check_password_hash(user['secret_code_hash'], secret_code):
         return True, user
     return False, None
-
-
-def update_password(email, new_password):
-    """
-    Update user's password and clear reset token.
-    
-    Returns:
-        tuple: (success, message)
-    """
-    password_hash = generate_password_hash(new_password)
-    
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'''
-            UPDATE users 
-            SET password_hash = {placeholder}, reset_token = NULL, reset_token_expiry = NULL, reset_attempts = 0
-            WHERE email = {placeholder}
-        ''', (password_hash, email))
-        conn.commit()
-        
-        if cursor.rowcount > 0:
-            return True, 'Password updated successfully'
-        return False, 'User not found'
-
-
-def check_reset_rate_limit(email):
-    """
-    Check if the user has requested a reset too recently.
-    
-    Returns:
-        tuple: (allowed, message)
-    """
-    placeholder = _get_placeholder()
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(f'SELECT last_reset_request FROM users WHERE email = {placeholder}', (email,))
-        user = cursor.fetchone()
-        
-        if not user or not user['last_reset_request']:
-            return True, None
-        
-        last_request = datetime.fromisoformat(user['last_reset_request'])
-        # Compare in UTC: both timestamps are naive UTC
-        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
-        if now_utc - last_request < timedelta(minutes=1):
-            return False, 'Please wait before requesting another code.'
-        
-        return True, None
 
 
 # Initialize database on import
